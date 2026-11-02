@@ -51,26 +51,39 @@ Maintain project-specific details in this README. The root team table provides a
 
 ## Project handoff
 
-Replace these placeholders as work progresses.
-
 | Field | Current value |
 | --- | --- |
-| Project name | Awaiting the owner's choice |
-| Main idea and goal | Awaiting the project brief |
-| Pull request | Add the permanent PR URL after opening it |
-| Demo or screenshot | Add a link when available |
-| App entry point | Add the relative path |
-| Hardware requirements | List the exact devices or write `None` |
-| Integration notes | Describe how the team can launch or combine this project |
+| Project name | Paint Mixer Challenge |
+| Department and class | Art · Painting & Drawing (Color Theory); also fits Freshman Arts Immersion: Painting & Drawing |
+| Main idea and goal | Paint drops fall into a bowl and, when they touch, merge and mix like real paint (blue + yellow = green). Students match target colors across 5 levels: secondary, tertiary, tints & shades, earth tones, and master mixes. Works as a class demo (the teacher projects it) or as homework (students open the link). |
+| Pull request | Pending: added after the PR opens |
+| Demo or screenshot | No hosted demo yet. Turning on GitHub Pages for `main` would give a public link. |
+| App entry point | `projects/hqddd-dot/index.html` |
+| Hardware requirements | None. Any modern browser with a mouse, trackpad, or touch screen. |
+| Integration notes | One static HTML file with no build step. Matter.js 0.20.0 loads from cdnjs. A shared launcher can link straight to `projects/hqddd-dot/index.html`. |
 
 ### Setup and run
 
-Add exact commands, their working directory, dependencies, environment variable names, and the local URL or other entry point.
+No install needed. From the repository root:
+
+```sh
+cd projects/hqddd-dot
+python3 -m http.server 8000
+```
+
+Then open http://localhost:8000/. Opening `index.html` directly in a browser also works. Both need internet access to load Matter.js from cdnjs.
 
 ### Controls and hardware
 
-Describe the controls, hardware connection steps, and any fallback mode. State which devices you actually tested.
+- **Red / Yellow / Blue / White / Black** buttons select a paint and drop one drop into the bowl.
+- **Click or tap above the bowl** to drop the selected paint at that spot.
+- Paint can't be removed. A color passes at a **93% match** within the **drop limit** (the recipe's drops + 2).
+- **Hint** shows the recipe but caps that color at 1★. **Empty bowl** restarts the current color. **Skip color** picks a new one. **Next color** appears after a match.
+- Stars: ★★★ = exact number of drops, ★★ = a few extra drops, ★ = used the hint. Solve 3 colors to unlock the next level.
+- Tested with a mouse in a desktop Chromium browser. No other hardware.
 
 ### Verification and remaining work
 
-List the checks and manual interactions you ran, their results, remaining issues, and the next action for the reviewer.
+- Ran it in the Claude desktop app's built-in Chromium browser at about 1024×700. Dropping an exact recipe (Orange = 1 Red + 1 Yellow) merged into one blob, scored 100%, and earned ★★★. Too many drops shows "Out of drops." No console errors.
+- Not yet tested: Safari, phones or tablets, and a classroom projector.
+- Next action for the reviewer: open `index.html`, play through Level 1, and check that the header shows the department and class clearly.
