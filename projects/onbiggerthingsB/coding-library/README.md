@@ -15,7 +15,7 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:3001. No API key is required. The current workspace preview reuses the installed dependencies in the neighboring reference checkout through an ignored node_modules symlink. A fresh checkout should run npm ci.
+Open http://127.0.0.1:3001. No API key is required. Dependencies are installed inside this app; the portable lockfile supports a clean checkout with npm ci.
 
 ```sh
 npm run typecheck
