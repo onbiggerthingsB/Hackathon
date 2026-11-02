@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paint Mixer Challenge</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --panel: #fffdf8;
+    --ink: #1b1b1f;
+    --muted: #6d6a64;
+    --line: #e2dccf;
+    --accent: #c8102e;
+    --good: #1f7a3a;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 20px;
+    padding: 12px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .dept { font-size: 13px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+  .dept span { color: var(--muted); }
+  h1 { font: 700 26px/1.15 Georgia, "Times New Roman", serif; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+  button {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--ink); }
+  button.on, button.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .dot { display: inline-block; width: 14px; height: 14px; margin-right: 6px; border-radius: 50%; vertical-align: -2px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); }
+  .stage { position: relative; flex: 1; min-height: 0; }
+  canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+  .hint { position: absolute; left: 20px; right: 20px; bottom: 14px; font-size: 14px; color: var(--muted); pointer-events: none; }
+  .card {
+    position: absolute;
+    top: 16px;
+    left: 20px;
+    width: 280px;
+    display: grid;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--panel);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .sw {
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 12px 12px;
+  }
+  small { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .level { font-size: 13px; font-weight: 700; }
+  .level span { color: var(--muted); font-weight: 600; }
+  .score { font: 700 26px/1.1 Georgia, serif; }
+  .meta { font-size: 14px; font-weight: 600; }
+  .meta.out { color: var(--accent); }
+  .recipe { font-size: 13px; color: var(--muted); }
+  .recipe:empty { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="dept">Art Department <span>· Painting &amp; Drawing — Color Theory</span></div>
+    <h1>Paint Mixer Challenge</h1>
+  </div>
+  <div class="controls" id="paints"></div>
+  <div class="controls" style="margin-left: 0">
+    <button id="hint">Hint (max 1★)</button>
+    <button id="retry">Empty bowl</button>
+    <button id="skip">Skip color</button>
+  </div>
+</header>
+<div class="stage">
+  <canvas id="c"></canvas>
+  <div class="card">
+    <div class="level" id="level"></div>
+    <div class="row"><span class="sw" id="tsw"></span><div><small>Mix this color</small><b id="tname"></b></div></div>
+    <div class="row"><span class="sw" id="msw"></span><div><small>Your mix</small><b id="mixparts"></b></div></div>
+    <div class="score" id="score"></div>
+    <div class="meta" id="drops"></div>
+    <div class="recipe" id="rtext"></div>
+    <button class="primary" id="next" hidden>Next color →</button>
+  </div>
+  <div class="hint">Pick a paint, then tap above the bowl to drop it in. Paint can't come back out, so plan your ratio. Match 93% within the drop limit to pass.</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
+<script>
+const { Engine, Bodies, Body, Composite, Events } = Matter;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const $ = id => document.getElementById(id);
+
+const canvas = $('c');
+const ctx = canvas.getContext('2d');
+const engine = Engine.create();
+const world = engine.world;
+
+const R0 = 15;   // radius of one drop of paint
+const PASS = 93; // match needed to pass
+const NAMES = { r: 'Red', y: 'Yellow', b: 'Blue', w: 'White', k: 'Black' };
+const KEYS = Object.keys(NAMES);
+
+// Five levels, from easy secondaries to five-paint "master" mixes.
+const LEVELS = [
+  { name: 'Secondary colors', targets: [['Orange', { r: 1, y: 1 }], ['Green', { y: 1, b: 1 }], ['Violet', { r: 1, b: 1 }]] },
+  { name: 'Tertiary colors', targets: [['Red-orange', { r: 2, y: 1 }], ['Yellow-orange', { r: 1, y: 2 }], ['Yellow-green', { y: 2, b: 1 }], ['Blue-green', { y: 1, b: 2 }], ['Blue-violet', { r: 1, b: 2 }], ['Red-violet', { r: 2, b: 1 }]] },
+  { name: 'Tints & shades', targets: [['Pink', { r: 1, w: 2 }], ['Sky blue', { b: 1, w: 3 }], ['Maroon', { r: 3, k: 1 }], ['Navy', { b: 3, k: 1 }], ['Lavender', { r: 1, b: 2, w: 3 }], ['Peach', { r: 1, y: 2, w: 3 }]] },
+  { name: 'Earth tones', targets: [['Brown', { r: 1, y: 1, b: 1 }], ['Olive', { y: 3, k: 1 }], ['Rust', { r: 3, y: 1, b: 1 }], ['Khaki', { r: 1, y: 3, b: 1, w: 2 }], ['Slate', { b: 2, w: 2, k: 1 }]] },
+  { name: 'Master mixes', targets: [['Terracotta', { r: 3, y: 2, b: 1, w: 1 }], ['Sage', { y: 2, b: 1, w: 3, k: 1 }], ['Plum', { r: 2, b: 2, w: 1, k: 1 }], ['Mustard', { r: 1, y: 4, k: 1 }], ['Teal', { y: 2, b: 3, k: 1 }]] },
+];
+const PER_LEVEL = 3;   // colors to solve before the next level
+
+// Painter's color model: mix in red-yellow-blue like real paint (blue + yellow = green).
+const CORNERS = {
+  w: [1, 1, 1], r: [0.86, 0.13, 0.15], y: [0.98, 0.84, 0.12], b: [0.16, 0.3, 0.65],
+  ry: [0.95, 0.5, 0.1], rb: [0.45, 0.16, 0.5], yb: [0.2, 0.6, 0.3], ryb: [0.3, 0.2, 0.13],
+};
+function ryb(r, y, b) {
+  const C = CORNERS, out = [];
+  for (let i = 0; i < 3; i++) {
+    out[i] = C.w[i] * (1 - r) * (1 - y) * (1 - b) + C.r[i] * r * (1 - y) * (1 - b)
+      + C.y[i] * (1 - r) * y * (1 - b) + C.b[i] * (1 - r) * (1 - y) * b
+      + C.ry[i] * r * y * (1 - b) + C.rb[i] * r * (1 - y) * b
+      + C.yb[i] * (1 - r) * y * b + C.ryb[i] * r * y * b;
+  }
+  return out;
+}
+
+// White makes a tint, black makes a shade.
+function mixColor(m) {
+  const P = m.r + m.y + m.b, T = P + m.w + m.k;
+  let c = [1, 1, 1];
+  if (P > 0) {
+    const mx = Math.max(m.r, m.y, m.b);
+    c = ryb(m.r / mx, m.y / mx, m.b / mx);
+  }
+  const tw = P + m.w > 0 ? m.w / (P + m.w) : 0;
+  c = c.map(v => v + (0.98 - v) * tw * 0.88);
+  const tk = T > 0 ? Math.min(1, (m.k / T) * 1.7) : 0;
+  return c.map(v => v + (0.08 - v) * tk);
+}
+
+const css = c => `rgb(${c.map(v => Math.round(clamp(v, 0, 1) * 255)).join(',')})`;
+
+// How close two colors look to the eye (CIELAB distance turned into a %).
+function lab(c) {
+  const lin = c.map(v => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+  const X = (lin[0] * 0.4124 + lin[1] * 0.3576 + lin[2] * 0.1805) / 0.95047;
+  const Y = lin[0] * 0.2126 + lin[1] * 0.7152 + lin[2] * 0.0722;
+  const Z = (lin[0] * 0.0193 + lin[1] * 0.1192 + lin[2] * 0.9505) / 1.08883;
+  const f = t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+}
+function closeness(a, b) {
+  const A = lab(a), B = lab(b);
+  return Math.max(0, Math.round(100 - Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]) * 1.4));
+}
+
+const empty = () => ({ r: 0, y: 0, b: 0, w: 0, k: 0 });
+const one = key => ({ ...empty(), [key]: 1 });
+const countParts = m => KEYS.reduce((n, key) => n + m[key], 0);
+const describe = m => KEYS.filter(key => m[key]).map(key => `${m[key]} ${NAMES[key]}`).join(' + ');
+
+let w = 0, h = 0, dpr = 1, bowl = [], B = { cx: 0, cy: 0, R: 0 };
+let current = 'r', level = 0, solvedHere = 0, stars = 0, target = null, drops = 0, hintUsed = false, solved = false, frameN = 0;
+const merges = [];
+
+function resize() {
+  const r = canvas.getBoundingClientRect();
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  w = r.width;
+  h = r.height;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  buildBowl();
+}
+
+function buildBowl() {
+  Composite.remove(world, bowl);
+  const R = Math.min(w * 0.3, h * 0.5);
+  B = { cx: w / 2 + Math.min(130, w * 0.09), cy: h - 34 - R, R };
+  bowl = [];
+  const N = 28, a0 = 0.1 * Math.PI, a1 = 0.9 * Math.PI;
+  for (let i = 0; i <= N; i++) {
+    const a = a0 + ((a1 - a0) * i) / N;
+    bowl.push(Bodies.rectangle(B.cx + R * Math.cos(a), B.cy + R * Math.sin(a), ((a1 - a0) * R) / N + 8, 18,
+      { isStatic: true, angle: a + Math.PI / 2, friction: 0.3 }));
+  }
+  Composite.add(world, bowl);
+}
+
+const paintBodies = () => Composite.allBodies(world).filter(b => b.label === 'paint');
+const limit = () => countParts(target.mix) + 2;
+
+function addBlob(x, y, mix, vx = 0, vy = 0) {
+  const body = Bodies.circle(x, y, R0 * Math.sqrt(countParts(mix)), { restitution: 0.15, friction: 0.08, frictionAir: 0.012, density: 0.001, label: 'paint' });
+  body.mix = mix;
+  body.color = css(mixColor(mix));
+  body.wobble = 1;
+  Body.setVelocity(body, { x: vx, y: vy });
+  Composite.add(world, body);
+}
+
+function drop(key, x) {
+  if (solved || drops >= limit()) return;
+  drops++;
+  const half = B.R * 0.75;
+  addBlob(x === undefined ? B.cx + (Math.random() - 0.5) * 40 : clamp(x, B.cx - half, B.cx + half), 24, one(key));
+}
+
+function clearPaint() { Composite.remove(world, paintBodies()); }
+
+function newTarget(skip) {
+  const list = LEVELS[level].targets;
+  let pick;
+  do pick = list[Math.floor(Math.random() * list.length)];
+  while (list.length > 1 && target && pick[0] === target.name);
+  target = { name: pick[0], mix: { ...empty(), ...pick[1] } };
+  drops = 0;
+  hintUsed = false;
+  solved = false;
+  if (!skip) clearPaint();
+  $('next').hidden = true;
+  $('hint').disabled = false;
+}
+
+// When two blobs touch they become one blob holding all of their paint.
+Events.on(engine, 'collisionStart', e => {
+  for (const p of e.pairs) if (p.bodyA.label === 'paint' && p.bodyB.label === 'paint') merges.push([p.bodyA, p.bodyB]);
+});
+
+function afterStep() {
+  const used = new Set();
+  for (const [a, b] of merges) {
+    if (used.has(a) || used.has(b)) continue;
+    used.add(a);
+    used.add(b);
+    const ma = a.mass, mb = b.mass, M = ma + mb;
+    const mix = empty();
+    KEYS.forEach(key => (mix[key] = a.mix[key] + b.mix[key]));
+    Composite.remove(world, [a, b]);
+    addBlob((a.position.x * ma + b.position.x * mb) / M, (a.position.y * ma + b.position.y * mb) / M, mix,
+      (a.velocity.x * ma + b.velocity.x * mb) / M, (a.velocity.y * ma + b.velocity.y * mb) / M);
+  }
+  merges.length = 0;
+  for (const b of paintBodies()) b.wobble *= 0.94;
+}
+
+function updateCard() {
+  const tot = empty();
+  for (const b of paintBodies()) KEYS.forEach(key => (tot[key] += b.mix[key]));
+  const n = countParts(tot);
+  const tc = mixColor(target.mix);
+  const score = n ? closeness(mixColor(tot), tc) : null;
+  const par = countParts(target.mix);
+
+  if (!solved && score !== null && score >= PASS) {
+    solved = true;
+    const earned = hintUsed ? 1 : drops <= par ? 3 : 2;
+    stars += earned;
+    solvedHere++;
+    $('next').hidden = false;
+    $('next').textContent = `${'★'.repeat(earned)} Next color →`;
+    $('hint').disabled = true;
+  }
+
+  $('level').innerHTML = `Level ${level + 1}/${LEVELS.length}: ${LEVELS[level].name} <span>· ${solvedHere}/${PER_LEVEL} done · ★ ${stars}</span>`;
+  $('tsw').style.background = css(tc);
+  $('tname').textContent = target.name;
+  $('msw').style.background = n ? css(mixColor(tot)) : '';
+  $('mixparts').textContent = n ? describe(tot) : 'Empty';
+  $('score').textContent = score === null ? '' : solved ? `${score}%: matched!` : `${score}% match`;
+  $('score').style.color = solved ? 'var(--good)' : 'var(--ink)';
+  const out = !solved && drops >= limit();
+  $('drops').textContent = out ? `Out of drops (${drops}/${limit()}). Empty the bowl and try again.` : `Drops: ${drops} / ${limit()}`;
+  $('drops').className = 'meta' + (out ? ' out' : '');
+  $('rtext').textContent = hintUsed ? 'Recipe: ' + describe(target.mix) : '';
+}
+
+$('next').onclick = () => {
+  if (solvedHere >= PER_LEVEL && level < LEVELS.length - 1) {
+    level++;
+    solvedHere = 0;
+  }
+  newTarget();
+};
+$('hint').onclick = () => { hintUsed = true; };
+$('retry').onclick = () => {
+  if (solved) return;
+  clearPaint();
+  drops = 0;
+};
+$('skip').onclick = () => newTarget();
+
+const paintsEl = $('paints');
+for (const key of KEYS) {
+  const b = document.createElement('button');
+  b.innerHTML = `<span class="dot" style="background:${css(mixColor(one(key)))}"></span>${NAMES[key]}`;
+  b.onclick = () => {
+    current = key;
+    [...paintsEl.children].forEach(x => x.classList.toggle('on', x === b));
+    drop(key);
+  };
+  paintsEl.appendChild(b);
+}
+paintsEl.children[0].classList.add('on');
+canvas.addEventListener('pointerdown', e => drop(current, e.offsetX));
+
+function draw() {
+  ctx.fillStyle = '#f4efe5';
+  ctx.fillRect(0, 0, w, h);
+
+  // ceramic mixing bowl
+  const a0 = 0.1 * Math.PI, a1 = 0.9 * Math.PI;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(B.cx, B.cy + 8, B.R + 4, a0, a1); ctx.strokeStyle = 'rgba(60,40,20,0.10)'; ctx.lineWidth = 34; ctx.stroke();
+  ctx.beginPath(); ctx.arc(B.cx, B.cy, B.R, a0, a1); ctx.strokeStyle = '#fdfcf8'; ctx.lineWidth = 22; ctx.stroke();
+  ctx.beginPath(); ctx.arc(B.cx, B.cy, B.R + 11, a0, a1); ctx.strokeStyle = '#d9d1c2'; ctx.lineWidth = 2; ctx.stroke();
+
+  const t = performance.now() / 1000;
+  for (const b of paintBodies()) {
+    const r = b.circleRadius, s = 1 + 0.14 * b.wobble * Math.sin(t * 24);
+    ctx.save();
+    ctx.translate(b.position.x, b.position.y);
+    ctx.scale(s, 1 / s);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = b.color; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-r * 0.35, -r * 0.42, r * 0.3, r * 0.16, -0.6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.fill();
+    ctx.restore();
+  }
+  if (++frameN % 6 === 0) updateCard();
+}
+
+// Physics runs at a fixed 60 steps per second on any screen; drawing happens once per frame.
+let last = performance.now(), acc = 0;
+function frame(now) {
+  acc += Math.min(100, now - last);
+  last = now;
+  while (acc >= 1000 / 60) {
+    Engine.update(engine, 1000 / 60);
+    afterStep();
+    acc -= 1000 / 60;
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', resize);
+resize();
+newTarget();
+updateCard();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
