@@ -57,10 +57,10 @@ Current handoff as of November 2, 2026.
 | --- | --- |
 | Project name | The Coding Index |
 | Main idea and goal | Searchable coding resource library for Science / Advanced Coding, with a Matter.js icon pile and agent-readable references |
-| Pull request | [PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2), open for team review; project branch pushed |
+| Pull request | [Original project PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2), merged. Laptop tilt update is on `project/onbiggerthingsB`. |
 | Demo or screenshot | [Live Coding Index](https://pomfret-coding-index.vercel.app), verified November 2, 2026 |
 | App entry point | `coding-library/app/page.tsx` |
-| Hardware requirements | None |
+| Hardware requirements | Standard browser use needs none. Optional laptop tilt uses a compatible Apple Silicon MacBook's sensor and the local motion helper. |
 | Integration notes | Standalone Next.js app inside `coding-library/`; local preview on port 3001 |
 
 ### Setup and run
@@ -73,8 +73,12 @@ Type a resource request and press Enter, or choose a category. Drag icons to mov
 
 ### Verification and remaining work
 
-November 2, 2026. All 17 Node tests, TypeScript and the production build passed. Independent review identified a browser-storage hydration issue; the fix and two regression tests were re-reviewed as resolved. A clean independent `npm ci` verified the portable lockfile, and `npm audit` reported zero vulnerabilities after patching the existing Next.js dependency to 16.4.4. No new dependency choices were added.
+Optional laptop tilt is documented in [the setup guide](coding-library/docs/LAPTOP_TILT.md). Run `npm run motion` from `coding-library/`, keep the terminal open, then enable Laptop tilt on the site. The helper sends motion readings directly to the page on the same computer.
+
+November 2, 2026. All 29 Node tests, TypeScript and the production build passed. Independent review identified a browser-storage hydration issue; the fix and two regression tests were re-reviewed as resolved. A clean independent `npm ci` verified the portable lockfile, and `npm audit` reported zero vulnerabilities after patching the existing Next.js dependency to 16.4.4. No new dependency choices were added.
 
 Browser checks covered desktop and emulated touch, search, named results, drag and button additions, duplicate handling, persistence, keyboard access, reduced motion, brief copy/download, details and agent access. The current index has 28,358 references, including 90 featured resources; 14 have documentation-checked guidance. Community-imported destination sites and external libraries have not all been individually run or verified. No physical-phone, real-student or school-Wi-Fi testing is claimed.
 
-The branch is pushed and PR #2 is open for team review. The production deployment passed with the Next.js configuration. Unauthenticated public checks passed for the homepage, search, checked resource API and page, icons and agent guide. Deployed app revision: `c3e36b1`; later documentation-only commits preserve this app. Shared delivery documentation is in [PR #4](https://github.com/onbiggerthingsB/Hackathon/pull/4). The next team action is peer review and a real classroom trial. Leave the PR open for team review; do not merge or submit the organizer form.
+The original project, credit cleanup and shared delivery documentation were merged through PRs #2, #5 and #4. The previous production deployment passed public checks for the homepage, search, checked resource API and page, icons and agent guide.
+
+The new tilt helper received 4,026 fresh accelerometer reports during a five-second probe on the M4 Pro MacBook Pro. The local browser received real sensor data, and calibration, pause/resume and switching tilt off were checked. Automated tests cover stale readings and teardown. Physical left/right direction and the public site's local-network permission flow still need verification. The next team action is review of the tilt update and a real classroom trial.

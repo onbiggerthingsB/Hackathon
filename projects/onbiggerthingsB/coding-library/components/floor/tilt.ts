@@ -1,97 +1,160 @@
 import Matter from "matter-js";
 import type { Scene } from "./scene";
+import { createTiltProjection, parseTiltSample, type Gravity } from "./tilt-math.ts";
 
-const FEED = "http://127.0.0.1:3917/motion"; // native/motion.swift, started with the server by lib/motion.ts. Without it nothing here does anything
-const SHAKE = 2.5; // how much harder a jolt pushes the icons than it pushed the laptop
-const SPIN = 0.003; // sideways pull per degree/second of turning the laptop flat on the desk
-const LID = 105; // degrees, used when the hinge sensor gives nothing
-const LEVEL = 0.045; // the sensor rests at about -0.013 sideways, and a constant 1.3% pull slides the whole pile into a
-// corner over a few minutes. Anything under this counts as level.
-const FLIP_X = 1; // set to -1 if tilting the laptop to the right sends the icons left
+export type TiltState = "off" | "connecting" | "active" | "paused" | "unavailable";
+export type TiltStatus = { state: TiltState; message: string };
 
-type Sample = { a: [number, number, number]; w: [number, number, number]; lid: number | null };
+const FEED = "http://127.0.0.1:3918/motion";
+const CONNECT_TIMEOUT_MS = 5000;
+const SAMPLE_TIMEOUT_MS = 1000;
+const WAKE_DISTANCE = 0.06;
+const CALIBRATION_SAMPLES = 15;
 
-/**
- * The MacBook's own accelerometer and gyro become the pile's gravity: tilt the laptop and the icons slide, shake it and
- * they jump. Browsers get no motion events on macOS, so a small native helper streams the sensor to this page.
- *
- * The sensor sits in the base: x to the right, y toward the hinge, z up, and lying flat it reads (0, 0, -1), the way
- * gravity points. The screen stands at the lid angle, so "down on the screen" is part of z and part of y.
- */
-export function createTilt(scene: Scene) {
-  const { engine } = scene;
+/** Connects only when requested. Sensor samples never pass through React state. */
+export function createTilt(scene: Scene, onStatus: (status: TiltStatus) => void) {
+  const projection = createTiltProjection();
   let source: EventSource | null = null;
-  let timer = 0;
+  let timer: number | undefined;
   let stopped = false;
-  let wanted = false; // off until the page says otherwise
-  let low: [number, number, number] | null = null; // the slow part of the signal: which way gravity points
-  let seen = 0;
-  let sign = 1;
-  const settled = { x: 0, y: 1 }; // the gravity the sleeping pile came to rest under
+  let wanted = false;
+  let suspended = false;
+  let lastSequence = -1;
+  let calibrationSamples = 0;
+  let calibrated = false;
+  let status: TiltStatus | null = null;
+  let settled: Gravity = { x: 0, y: 1 };
 
-  const apply = (gx: number, gy: number) => {
-    engine.gravity.x = gx;
-    engine.gravity.y = gy;
-    // Sleeping bodies do not feel gravity change. Wake them when it has turned or jumped enough to matter.
-    if (Math.hypot(gx - settled.x, gy - settled.y) < 0.1) return;
-    settled.x = gx;
-    settled.y = gy;
-    for (let i = 0; i < scene.added; i++) if (!scene.holds.has(i)) Matter.Sleeping.set(scene.bodies[i], false); // parked matches stay parked
-    scene.dirty = true;
-  };
+  function report(state: TiltState, message: string) {
+    if (stopped || (status?.state === state && status.message === message)) return;
+    status = { state, message };
+    onStatus(status);
+  }
 
-  const onSample = ({ a, w, lid }: Sample) => {
-    low = low ? [low[0] + (a[0] - low[0]) * 0.08, low[1] + (a[1] - low[1]) * 0.08, low[2] + (a[2] - low[2]) * 0.08] : a;
-    if (++seen === 15) sign = low[2] <= 0 ? 1 : -1; // some firmware reports the push of the desk instead of the pull of gravity
-    if (seen < 15) return;
-    // What loose things inside the laptop feel: gravity, plus every jolt, exaggerated.
-    const p = [0, 1, 2].map((k) => sign * (low![k] + SHAKE * (a[k] - low![k])));
-    const angle = ((lid && lid > 30 && lid < 170 ? lid : LID) * Math.PI) / 180;
-    const turning = Math.abs(w[2]) > 8 ? w[2] : 0; // the gyro drifts by a few degrees/second at rest
-    let gx = FLIP_X * p[0] + SPIN * turning;
-    let gy = p[1] * Math.cos(angle) - p[2] * Math.sin(angle);
-    if (Math.abs(gx) < LEVEL) gx = 0;
-    const size = Math.hypot(gx, gy);
-    if (size > 3) {
-      gx *= 3 / size;
-      gy *= 3 / size;
+  function apply(gravity: Gravity) {
+    scene.engine.gravity.x = gravity.x;
+    scene.engine.gravity.y = gravity.y;
+    if (Math.hypot(gravity.x - settled.x, gravity.y - settled.y) < WAKE_DISTANCE) return;
+    settled = gravity;
+    for (let index = 0; index < scene.added; index++) {
+      if (!scene.holds.has(index)) Matter.Sleeping.set(scene.bodies[index], false);
     }
-    apply(gx, gy);
-  };
+    scene.dirty = true;
+  }
 
-  const connect = () => {
-    if (stopped || !wanted || source) return;
-    source = new EventSource(FEED);
-    source.onmessage = (e) => {
-      try {
-        onSample(JSON.parse(e.data) as Sample);
-      } catch {}
-    };
-    source.onerror = () => {
-      // The helper is not running or went away: ordinary gravity, and a quiet retry later.
-      disconnect();
-      timer = window.setTimeout(connect, 20000);
-    };
-  };
-
-  const disconnect = () => {
+  function disconnect() {
     window.clearTimeout(timer);
-    source?.close();
-    source = null;
-    low = null;
-    seen = 0;
-    apply(0, 1);
-  };
+    timer = undefined;
+    if (source) {
+      source.onmessage = null;
+      source.onerror = null;
+      source.close();
+      source = null;
+    }
+    lastSequence = -1;
+    calibrationSamples = 0;
+    projection.reset(true);
+    apply({ x: 0, y: 1 });
+  }
+
+  function unavailable(message: string) {
+    wanted = false;
+    disconnect();
+    calibrated = false;
+    projection.reset();
+    report("unavailable", message);
+  }
+
+  function armTimeout(delay: number, message: string) {
+    window.clearTimeout(timer);
+    const connection = source;
+    timer = window.setTimeout(() => {
+      if (!stopped && wanted && !suspended && source === connection) unavailable(message);
+    }, delay);
+  }
+
+  function connect() {
+    if (stopped || !wanted || suspended || source) return;
+    report("connecting", "Connecting to the laptop motion helper…");
+    let connection: EventSource;
+    try {
+      connection = new EventSource(FEED);
+      source = connection;
+    } catch {
+      unavailable("Start the local motion helper and allow local network access, then try Laptop tilt again.");
+      return;
+    }
+    armTimeout(CONNECT_TIMEOUT_MS, "No motion readings arrived. Start the local motion helper, then try Laptop tilt again.");
+    connection.onmessage = event => {
+      if (stopped || source !== connection || suspended || !wanted) return;
+      let sample;
+      try {
+        sample = parseTiltSample(JSON.parse(event.data));
+      } catch {
+        return;
+      }
+      if (!sample || sample.sequence <= lastSequence) return;
+      lastSequence = sample.sequence;
+      let gravity = projection.add(sample);
+      armTimeout(SAMPLE_TIMEOUT_MS, "Motion readings stopped. Check the local helper, then try Laptop tilt again.");
+      if (!calibrated) {
+        calibrationSamples++;
+        if (calibrationSamples < CALIBRATION_SAMPLES) {
+          report("connecting", "Hold your Mac level while the motion sensor calibrates…");
+          return;
+        }
+        gravity = projection.calibrate() ?? gravity;
+        calibrated = true;
+      }
+      apply(gravity);
+      if (status?.state !== "active") report("active", "Laptop tilt is on. Tilt your Mac to move the icons.");
+    };
+    connection.onerror = () => {
+      if (stopped || source !== connection) return;
+      unavailable("Cannot reach the motion helper. Start it and allow local network access, then try Laptop tilt again.");
+    };
+  }
+
+  report("off", "Laptop tilt is off.");
 
   return {
-    /** The switch in the corner of the page. Off means ordinary gravity and no connection to the helper at all. */
-    set(on: boolean) {
+    setEnabled(on: boolean) {
+      if (stopped || wanted === on) return;
       wanted = on;
-      if (on) connect();
-      else disconnect();
+      if (!on) {
+        disconnect();
+        projection.reset();
+        calibrated = false;
+        report("off", "Laptop tilt is off.");
+      } else if (suspended) {
+        report("paused", "Laptop tilt is paused with motion.");
+      } else {
+        connect();
+      }
+    },
+    setSuspended(on: boolean) {
+      if (stopped || suspended === on) return;
+      suspended = on;
+      if (!wanted) return;
+      if (on) {
+        disconnect();
+        report("paused", "Laptop tilt is paused with motion.");
+      } else {
+        connect();
+      }
+    },
+    calibrate() {
+      if (stopped || status?.state !== "active") return;
+      const gravity = projection.calibrate();
+      if (gravity) {
+        apply(gravity);
+        report("active", "Level set. Tilt your laptop to move the icons.");
+      }
     },
     stop() {
+      if (stopped) return;
       stopped = true;
+      wanted = false;
       disconnect();
     },
   };

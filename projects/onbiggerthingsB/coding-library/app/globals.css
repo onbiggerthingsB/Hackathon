@@ -24,6 +24,68 @@
 .index-footer>span { padding:5px 8px; background:#0b0b0ce8; border-radius:4px; }
 .index-footer>div { display:flex; align-items:center; gap:18px; }
 .index-footer button { border:1px solid #ffffff25; padding:6px 9px; border-radius:4px; background:#111113e8; color:#b9b9c0; }
+.laptop-tilt-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+.laptop-tilt-controls > button {
+  white-space: nowrap;
+}
+.tilt-indicator {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #777780;
+}
+.tilt-indicator[data-state="active"] { background: #9de7b2; }
+.tilt-indicator[data-state="connecting"] { background: #e3ca84; }
+.index-footer .tilt-setup-button { padding-inline: 7px; }
+.tilt-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.tilt-setup {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: min(330px, calc(100vw - 28px));
+  padding: 20px;
+  border: 1px solid #ffffff25;
+  border-radius: 8px;
+  background: #141416;
+  color: #b9b9c0;
+  box-shadow: 0 10px 35px #0008;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tilt-setup strong { display: block; color: #eeeef4; padding-right: 24px; }
+.tilt-setup p { margin-top: 12px; }
+.tilt-setup code {
+  display: block;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 4px;
+  background: #09090b;
+  color: #eeeef4;
+  font-size: 12px;
+}
+.tilt-setup a { display: inline-block; margin-top: 12px; color: #eeeef4; }
+.index-footer .tilt-close { position: absolute; right: 8px; top: 8px; padding: 2px 7px; font-size: 16px; }
+@media (max-width: 640px) {
+  .index-footer > div { gap: 7px; }
+  .index-footer .index-hint { display: none; }
+  .laptop-tilt-controls { gap: 4px; }
+  .tilt-setup { position: fixed; right: 14px; bottom: 55px; }
+  .index-footer:has(.laptop-tilt-controls button[aria-pressed="true"]) > span { display: none; }
+}
 .index-panel-backdrop { position:fixed; inset:0; z-index:50; width:100%; height:100%; max-width:none; max-height:none; margin:0; padding:0; border:0; color:#ededf2; background:#0005; display:flex; justify-content:flex-end; }
 .index-panel-backdrop:not([open]) { display:none; }
 .index-panel-backdrop::backdrop { background:transparent; }
