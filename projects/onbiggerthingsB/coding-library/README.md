@@ -2,7 +2,7 @@
 
 A searchable resource library for Science / Advanced Coding. Students explore a Matter.js pile of website icons, compare resources, collect a project kit and give their existing coding agent a source-backed implementation brief.
 
-The interface adapts the MIT-licensed physics and search presentation from [Aayan Ali's YC indexor](https://github.com/Aayan-DEV/aayans-yc-indexor). See LICENSE and NOTICE.
+See LICENSE and NOTICE for third-party licensing.
 
 [Open the live app](https://pomfret-coding-index.vercel.app) · [Project PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2)
 

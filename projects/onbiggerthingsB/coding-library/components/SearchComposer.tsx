@@ -94,7 +94,7 @@ export function SearchComposer({ value, onChange, onSubmit, onClear, busy }: Pro
         aria-label={busy ? "Searching" : "Search"}
         className="grid size-12 shrink-0 place-items-center rounded-[5px] border border-line transition-all duration-300 ease-out enabled:hover:border-line-strong enabled:hover:bg-white/[0.06] enabled:active:scale-95 disabled:opacity-45"
       >
-{/* The orb is the search button: it breathes while idle and spins up while Jev is judging. */}
+        {/* The search orb breathes while idle and spins while a search is running. */}
         <Orb state={busy ? "searching" : "breathing"} size={64} display={30} />
       </button>
     </form>
