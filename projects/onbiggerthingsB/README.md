@@ -57,7 +57,7 @@ Current handoff as of November 2, 2026.
 | --- | --- |
 | Project name | The Coding Index |
 | Main idea and goal | Searchable coding resource library for Science / Advanced Coding, with a Matter.js icon pile and agent-readable references |
-| Pull request | [Original project PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2), merged. Laptop tilt update is on `project/onbiggerthingsB`. |
+| Pull request | [Laptop tilt PR #6](https://github.com/onbiggerthingsB/Hackathon/pull/6), draft while physical direction and the live browser connection are checked. Original project PR #2 is merged. |
 | Demo or screenshot | [Live Coding Index](https://pomfret-coding-index.vercel.app), verified November 2, 2026 |
 | App entry point | `coding-library/app/page.tsx` |
 | Hardware requirements | Standard browser use needs none. Optional laptop tilt uses a compatible Apple Silicon MacBook's sensor and the local motion helper. |
@@ -82,3 +82,5 @@ Browser checks covered desktop and emulated touch, search, named results, drag a
 The original project, credit cleanup and shared delivery documentation were merged through PRs #2, #5 and #4. The previous production deployment passed public checks for the homepage, search, checked resource API and page, icons and agent guide.
 
 The new tilt helper received 4,026 fresh accelerometer reports during a five-second probe on the M4 Pro MacBook Pro. The local browser received real sensor data, and calibration, pause/resume and switching tilt off were checked. Automated tests cover stale readings and teardown. Physical left/right direction and the public site's local-network permission flow still need verification. The next team action is review of the tilt update and a real classroom trial.
+
+The tilt update is deployed at the live link above. Deployment `dpl_bsze8G3jnkhBq3TpmKPJTmTAYPhU` uses app revision `cd69b4d`. Public HTTP checks confirmed the new controls and working resource search. The final PR diff is confined to this project folder, and GitHub reported no configured checks. Later handoff-only commits do not change the deployed app.

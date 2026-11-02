@@ -4,7 +4,7 @@ A searchable resource library for Science / Advanced Coding. Students explore a 
 
 See LICENSE and NOTICE for third-party licensing.
 
-[Open the live app](https://pomfret-coding-index.vercel.app) · [Project PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2)
+[Open the live app](https://pomfret-coding-index.vercel.app) · [Laptop tilt PR #6](https://github.com/onbiggerthingsB/Hackathon/pull/6)
 
 ## Run locally
 
@@ -86,9 +86,10 @@ Completed on November 2, 2026.
 - Independent review found a browser-storage hydration issue; the fix and its regression tests were re-reviewed as resolved.
 - Next.js was patched to 16.4.4 within the existing dependency choice. A clean independent `npm ci` verified the portable lockfile; `npm audit` reported zero vulnerabilities. No new dependency choices were added.
 - The original project was merged through [PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2).
-- The Next.js production deployment passed. Unauthenticated public checks verified the homepage, search over 28,358 references, checked resource API and page, icons, agent guide and invalid-input responses. Vercel deployment: `dpl_HHpVp43R1GsY5DCjU8d6fWXGg8Vj`, app revision `c3e36b1`. Later documentation-only commits do not change that deployed app.
+- The Next.js production deployment passed. Earlier unauthenticated public checks verified the homepage, search over 28,358 references, checked resource API and page, icons, agent guide and invalid-input responses. The latest tilt deployment is `dpl_bsze8G3jnkhBq3TpmKPJTmTAYPhU`, app revision `cd69b4d`. Public HTTP checks confirmed the new controls and working resource search. Later documentation-only commits do not change that deployed app.
 - A live Ego Browser walkthrough confirmed search, checked guidance, collection, Markdown download and restoration of the goal, setup and resources after reload.
 - Shared team delivery documentation is tracked separately in [PR #4](https://github.com/onbiggerthingsB/Hackathon/pull/4).
 - Laptop tilt received live accelerometer data through the local browser. Calibration, pause/resume and switching tilt off were exercised. The helper's origin, method and path restrictions passed runtime checks. Physical left/right direction and the public site's browser permission flow still need verification.
+- Laptop tilt is tracked in draft PR #6. Its diff is confined to this project folder, and GitHub reported no configured checks.
 
 No external hardware is required. Optional physical laptop tilt requires the foreground motion helper and a compatible MacBook sensor. Start it from this directory with `npm run motion`, then choose Laptop tilt on the page. Browser local-network permission may be requested.
