@@ -236,7 +236,15 @@ export function CodingIndex({ featured, indexed }: { featured: Resource[]; index
 
     <ProjectTray project={project} dropRef={dropTarget} notice={projectNotice} onOpen={() => {setPanel("project"); setCopyStatus(""); setCopyFallback("");}} />
 
-    <footer className="index-footer"><span>{featured.length} featured resources <span className="index-separator">/</span> <a href="https://github.com/Aayan-DEV/aayans-yc-indexor" target="_blank" rel="noreferrer">Physics by Aayan Ali</a></span><div><span className="index-hint">Click to explore. Drag to your project.</span><button onClick={() => setPaused(value => !value)} aria-pressed={paused}>{paused ? "Resume motion" : "Pause motion"}</button></div></footer>
+    <footer className="index-footer">
+      <span>{featured.length} featured resources</span>
+      <div>
+        <span className="index-hint">Click to explore. Drag to your project.</span>
+        <button onClick={() => setPaused(value => !value)} aria-pressed={paused}>
+          {paused ? "Resume motion" : "Pause motion"}
+        </button>
+      </div>
+    </footer>
 
     <dialog ref={panelDialog} className="index-panel-backdrop" onCancel={() => setPanel(null)} onClose={() => setPanel(null)} onClick={event => {if (event.target === event.currentTarget) setPanel(null);}}>
       {panel && <section className="index-panel" aria-label={panel === "project" ? "Project tray" : panel === "agents" ? "Agent access" : panel === "saved" ? "Saved resources" : "Search results"}>
