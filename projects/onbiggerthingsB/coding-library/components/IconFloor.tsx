@@ -15,6 +15,7 @@ import { popScale } from "./floor/pop";
 import type { Hold, Match, Scene } from "./floor/scene";
 import { renderSprite } from "./floor/sprite";
 import { createSwaps } from "./floor/swaps";
+import { createTilt, type TiltStatus } from "./floor/tilt";
 
 export type { Match };
 
@@ -29,6 +30,8 @@ export type FloorApi = {
   add: (src: string) => void;
   /** Pause physical movement while keeping resource selection available. */
   setPaused: (paused: boolean) => void;
+  setTiltEnabled: (enabled: boolean) => void;
+  calibrateTilt: () => void;
 };
 
 type Props = {
@@ -44,6 +47,7 @@ type Props = {
   /** Viewport bounds of the project tray, read when the pointer is released. */
   getDropBounds?: () => DropBounds | null;
   onResourceDrop?: (src: string) => void;
+  onTiltStatus?: (status: TiltStatus) => void;
 };
 
 const loadImage = (src: string) => {
@@ -63,7 +67,7 @@ const loadImage = (src: string) => {
  * this the floor re-rendered with it: 180 label elements reconciled, and, because their ref was an inline arrow, 180
  * refs detached and re-attached, thirteen times a second. That alone was most of the jank while typing.
  */
-export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef, onReady, onResourceSelect, getDropBounds, onResourceDrop }: Props) {
+export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef, onReady, onResourceSelect, getDropBounds, onResourceDrop, onTiltStatus }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const beamRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -78,11 +82,13 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
   const pausedRef = useRef(false);
   const selectRef = useRef(onResourceSelect);
   const dropRef = useRef({ getDropBounds, onResourceDrop });
+  const tiltStatusRef = useRef(onTiltStatus);
 
   useEffect(() => {
     selectRef.current = onResourceSelect;
     dropRef.current = { getDropBounds, onResourceDrop };
-  }, [onResourceSelect, getDropBounds, onResourceDrop]);
+    tiltStatusRef.current = onTiltStatus;
+  }, [onResourceSelect, getDropBounds, onResourceDrop, onTiltStatus]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -127,6 +133,8 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       },
     };
     const { images, bodies, holds, grown, sharp, pops } = scene;
+    const tilt = createTilt(scene, status => tiltStatusRef.current?.(status));
+    tilt.setSuspended(!scene.animate || document.hidden);
 
     /** Redraw every cell. One pass over the pile, and the only thing a resize costs. */
     const rebake = () => {
@@ -428,6 +436,7 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       setPaused(paused) {
         pausedRef.current = paused;
         scene.animate = !paused && !reduced;
+        tilt.setSuspended(!scene.animate || document.hidden);
         if (!scene.animate) {
           swaps.finish();
           placeRemaining();
@@ -436,12 +445,15 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
         last = performance.now();
         acc = 0;
       },
+      setTiltEnabled: enabled => tilt.setEnabled(enabled),
+      calibrateTilt: () => tilt.calibrate(),
     };
     onReady?.();
 
     const onReducedMotion = (event: MediaQueryListEvent) => {
       reduced = event.matches;
       scene.animate = !reduced && !pausedRef.current;
+      tilt.setSuspended(!scene.animate || document.hidden);
       if (!scene.animate) {
         swaps.finish();
         placeRemaining();
@@ -527,6 +539,7 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     };
     const onVisibilityChange = () => {
+      tilt.setSuspended(!scene.animate || document.hidden);
       last = performance.now();
       acc = 0;
       restoreHold();
@@ -561,6 +574,7 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
     window.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
+      tilt.stop();
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("wheel", onWheel);

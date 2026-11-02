@@ -5,6 +5,8 @@ import type { Resource } from "@/lib/resources";
 import { IconFloor, type FloorApi } from "./IconFloor";
 import { SearchComposer } from "./SearchComposer";
 import { ProjectTray } from "./ProjectTray";
+import { LaptopTiltControls } from "./LaptopTiltControls";
+import type { TiltStatus } from "./floor/tilt";
 import { addResource, buildProjectBrief, emptyProject, loadLibraryState, PROJECT_LIMIT, readResource } from "@/lib/project-brief";
 
 type Result = { resources: Resource[]; total: number; offset: number };
@@ -37,6 +39,8 @@ export function CodingIndex({ featured, indexed }: { featured: Resource[]; index
   const [project, setProject] = useState(emptyProject);
   const [projectLoaded, setProjectLoaded] = useState(false);
   const [projectNotice, setProjectNotice] = useState("");
+  const [tiltStatus, setTiltStatus] = useState<TiltStatus>({ state: "off", message: "" });
+  const tiltWanted = useRef(false);
   const dropTarget = useRef<HTMLButtonElement>(null);
   const floor = useRef<FloorApi | null>(null);
   const bar = useRef<HTMLDivElement>(null);
@@ -47,6 +51,16 @@ export function CodingIndex({ featured, indexed }: { featured: Resource[]; index
   const requestId = useRef(0);
   const lastKey = useRef(0);
   const ready = useCallback(() => setFloorVersion(value => value + 1), []);
+  const onTiltStatus = useCallback((status: TiltStatus) => {
+    if (status.state === "unavailable") tiltWanted.current = false;
+    setTiltStatus(status);
+  }, []);
+
+  const toggleTilt = () => {
+    const enabled = tiltStatus.state === "off" || tiltStatus.state === "unavailable";
+    tiltWanted.current = enabled;
+    floor.current?.setTiltEnabled(enabled);
+  };
 
   // A sampled visual pile stays small even when the searchable index is large.
   const sources = useMemo(() => Array.from({ length: 4 }, () => featured.map(resource => resource.icon)).flat(), [featured]);
@@ -66,6 +80,7 @@ export function CodingIndex({ featured, indexed }: { featured: Resource[]; index
   }, [matches, floorVersion]);
 
   useEffect(() => { floor.current?.setPaused(paused); }, [paused, floorVersion]);
+  useEffect(() => { floor.current?.setTiltEnabled(tiltWanted.current); }, [floorVersion]);
 
   useEffect(() => {
     const restored = loadLibraryState(key => localStorage.getItem(key));
@@ -215,7 +230,7 @@ export function CodingIndex({ featured, indexed }: { featured: Resource[]; index
   const listed = panel === "saved" ? saved : result?.resources || (busy || error ? [] : featured);
 
   return <>
-    <IconFloor sources={sources} cells={cells} sheet={null} apiRef={floor} onReady={ready} onResourceSelect={openResource} getDropBounds={getDropBounds} onResourceDrop={dropResource} />
+    <IconFloor sources={sources} cells={cells} sheet={null} apiRef={floor} onReady={ready} onResourceSelect={openResource} getDropBounds={getDropBounds} onResourceDrop={dropResource} onTiltStatus={onTiltStatus} />
     <header className="index-header">
       <a href="/" className="index-brand"><span className="index-symbol" aria-hidden="true">⌘</span><span>The Coding Index<small>Science / Advanced Coding</small></span></a>
       <nav aria-label="Library"><button onClick={() => { setPanel("results"); void search(text); }}>Explore</button><button onClick={() => setPanel("saved")}>Saved <span>{saved.length}</span></button><button onClick={() => { setPanel("agents"); setCopyStatus(""); setCopyFallback(""); }}>For agents <span aria-hidden="true">↗</span></button></nav>
@@ -240,6 +255,7 @@ export function CodingIndex({ featured, indexed }: { featured: Resource[]; index
       <span>{featured.length} featured resources</span>
       <div>
         <span className="index-hint">Click to explore. Drag to your project.</span>
+        <LaptopTiltControls status={tiltStatus} onToggle={toggleTilt} onCalibrate={() => floor.current?.calibrateTilt()} />
         <button onClick={() => setPaused(value => !value)} aria-pressed={paused}>
           {paused ? "Resume motion" : "Pause motion"}
         </button>
