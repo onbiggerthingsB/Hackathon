@@ -51,26 +51,50 @@ Maintain project-specific details in this README. The root team table provides a
 
 ## Project handoff
 
-Replace these placeholders as work progresses.
-
 | Field | Current value |
 | --- | --- |
-| Project name | Awaiting the owner's choice |
-| Main idea and goal | Awaiting the project brief |
-| Pull request | Add the permanent PR URL after opening it |
-| Demo or screenshot | Add a link when available |
-| App entry point | Add the relative path |
-| Hardware requirements | List the exact devices or write `None` |
-| Integration notes | Describe how the team can launch or combine this project |
+| Project name | Galton Board |
+| Main idea and goal | Math Department, Statistics. Balls fall through pegs and pile into a bell curve. Students compare the piles with the binomial prediction. |
+| Pull request | https://github.com/onbiggerthingsB/Hackathon/pull/1 |
+| Demo or screenshot | Run locally from `projects/mtober27/index.html`. No hosted demo yet. |
+| App entry point | `projects/mtober27/index.html` |
+| Hardware requirements | None |
+| Integration notes | Static page. No build step and no shared launcher yet. Serve this folder and link to `index.html`. |
 
 ### Setup and run
 
-Add exact commands, their working directory, dependencies, environment variable names, and the local URL or other entry point.
+No install and no environment variables. From the repository root:
+
+```sh
+cd projects/mtober27
+python3 -m http.server 8765
+```
+
+Open http://127.0.0.1:8765/
+
+Matter.js 0.20.0 is already in `vendor/matter.min.js`.
 
 ### Controls and hardware
 
-Describe the controls, hardware connection steps, and any fallback mode. State which devices you actually tested.
+No hardware. Tested in desktop Chrome.
+
+| Control | What it does |
+| --- | --- |
+| Drop 1, Drop 40, Drop 120 | Release that many balls. The board holds 140. |
+| Click the board | Drop one ball. |
+| Pause / Resume | Freeze or continue the physics. Space does this when focus is not in a control. |
+| Reset | Clear the balls and return the wind to fair. R does this when focus is not in a control. |
+| Peg rows | 6 to 12. Changing it clears the board. |
+| Side wind | Push falling balls left or right. Reset before comparing that run with a fair one. |
+| Show the fair prediction | Show or hide the red binomial marks. |
 
 ### Verification and remaining work
 
-List the checks and manual interactions you ran, their results, remaining issues, and the next action for the reviewer.
+Checked on November 2, 2026 in headless Chrome.
+
+- A fair 8-row run of 100 balls averaged bin 3.9. The fair value is 4.0. Every settled ball stayed inside its assigned bin.
+- Earlier fair runs of 120 balls averaged 4.1 and 3.8. Side wind of 0.8 moved the average about one bin off center.
+- The spread is wider than a perfect coin-flip model at 8 rows. The page says so.
+- The page was also checked at a laptop size. Department, class, controls, piles, and the comparison chart are on the first screen.
+
+Still open: a public class link, and a classmate trying the page without help. The next step is a teammate review of this pull request.
