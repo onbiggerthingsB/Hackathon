@@ -1,6 +1,6 @@
 ## Project
 
-<!-- Project name, teammate, and folder. -->
+<!-- Project name, teammate, folder, and link to the member's project README. -->
 
 ## What it does
 
@@ -13,6 +13,13 @@
 ## Verification
 
 <!-- Describe what you tested and any current limitations. -->
+
+## Handoff
+
+- [ ] The project README includes exact setup and run commands.
+- [ ] Controls, required hardware, and hardware testing are documented.
+- [ ] I added this PR's permanent URL to the project README after opening it.
+- [ ] I checked the final diff and the results of any configured GitHub checks.
 
 ## Shared changes
 
