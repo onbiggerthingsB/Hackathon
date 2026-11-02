@@ -57,7 +57,7 @@ Current handoff as of November 2, 2026.
 | --- | --- |
 | Project name | The Coding Index |
 | Main idea and goal | Searchable coding resource library for Science / Advanced Coding, with a Matter.js icon pile and agent-readable references |
-| Pull request | [Laptop tilt PR #6](https://github.com/onbiggerthingsB/Hackathon/pull/6), ready for review after the owner's live-site physical tilt check. Original project PR #2 is merged. |
+| Pull request | [Search field focus fix PR #8](https://github.com/onbiggerthingsB/Hackathon/pull/8), ready for review and verified on the live site at app revision `75400d7`. Laptop tilt PR #6 and original project PR #2 are merged. |
 | Demo or screenshot | [Live Coding Index](https://pomfret-coding-index.vercel.app), verified November 2, 2026 |
 | App entry point | `coding-library/app/page.tsx` |
 | Hardware requirements | Standard browser use needs none. Optional laptop tilt uses a compatible Apple Silicon MacBook's sensor and the local motion helper. |
