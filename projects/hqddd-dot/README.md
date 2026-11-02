@@ -56,7 +56,7 @@ Maintain project-specific details in this README. The root team table provides a
 | Project name | Paint Mixer Challenge |
 | Department and class | Art · Painting & Drawing (Color Theory); also fits Freshman Arts Immersion: Painting & Drawing |
 | Main idea and goal | Paint drops fall into a bowl and, when they touch, merge and mix like real paint (blue + yellow = green). Students match target colors across 5 levels: secondary, tertiary, tints & shades, earth tones, and master mixes. Works as a class demo (the teacher projects it) or as homework (students open the link). |
-| Pull request | Pending: added after the PR opens |
+| Pull request | https://github.com/onbiggerthingsB/Hackathon/pull/3 |
 | Demo or screenshot | No hosted demo yet. Turning on GitHub Pages for `main` would give a public link. |
 | App entry point | `projects/hqddd-dot/index.html` |
 | Hardware requirements | None. Any modern browser with a mouse, trackpad, or touch screen. |
