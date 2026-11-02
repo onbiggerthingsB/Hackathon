@@ -55,22 +55,22 @@ Replace these placeholders as work progresses.
 
 | Field | Current value |
 | --- | --- |
-| Project name | Awaiting the owner's choice |
-| Main idea and goal | Awaiting the project brief |
+| Project name | The Coding Index |
+| Main idea and goal | Searchable coding resource library for Science / Advanced Coding, with a Matter.js icon pile and agent-readable references |
 | Pull request | Add the permanent PR URL after opening it |
 | Demo or screenshot | Add a link when available |
-| App entry point | Add the relative path |
-| Hardware requirements | List the exact devices or write `None` |
-| Integration notes | Describe how the team can launch or combine this project |
+| App entry point | `coding-library/app/page.tsx` |
+| Hardware requirements | None |
+| Integration notes | Standalone Next.js app inside `coding-library/`; local preview on port 3001 |
 
 ### Setup and run
 
-Add exact commands, their working directory, dependencies, environment variable names, and the local URL or other entry point.
+From `projects/onbiggerthingsB/coding-library/`, run `npm ci` and `npm run dev`, then open http://127.0.0.1:3001. Node 20.9 or newer is required. No API key is required. See [the app README](coding-library/README.md) for build commands, data provenance and agent endpoints.
 
 ### Controls and hardware
 
-Describe the controls, hardware connection steps, and any fallback mode. State which devices you actually tested.
+Type a resource request and press Enter, or choose a category. Drag icons to move them and click an icon to inspect a resource. The results list supplies keyboard access and pagination. Saved links stay in the browser. Pause motion and reduced-motion support are available. Desktop browser and narrow-screen emulation were tested.
 
 ### Verification and remaining work
 
-List the checks and manual interactions you ran, their results, remaining issues, and the next action for the reviewer.
+November 2, 2026. TypeScript and production build passed. Browser checks covered search, icon selection, saved resources, details and agent access. The current merged index has 28,358 references, including 90 featured resources. Community-imported destination sites have not all been individually checked. Public deployment and the project pull request remain pending.
