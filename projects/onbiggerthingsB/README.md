@@ -51,14 +51,14 @@ Maintain project-specific details in this README. The root team table provides a
 
 ## Project handoff
 
-Replace these placeholders as work progresses.
+Current handoff as of November 2, 2026.
 
 | Field | Current value |
 | --- | --- |
 | Project name | The Coding Index |
 | Main idea and goal | Searchable coding resource library for Science / Advanced Coding, with a Matter.js icon pile and agent-readable references |
-| Pull request | Add the permanent PR URL after opening it |
-| Demo or screenshot | Add a link when available |
+| Pull request | [PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2), open for team review; project branch pushed |
+| Demo or screenshot | [Live Coding Index](https://pomfret-coding-index.vercel.app), verified November 2, 2026 |
 | App entry point | `coding-library/app/page.tsx` |
 | Hardware requirements | None |
 | Integration notes | Standalone Next.js app inside `coding-library/`; local preview on port 3001 |
@@ -69,8 +69,12 @@ From `projects/onbiggerthingsB/coding-library/`, run `npm ci` and `npm run dev`,
 
 ### Controls and hardware
 
-Type a resource request and press Enter, or choose a category. Drag icons to move them and click an icon to inspect a resource. The results list supplies keyboard access and pagination. Saved links stay in the browser. Pause motion and reduced-motion support are available. Desktop browser and narrow-screen emulation were tested.
+Type a resource request and press Enter, or choose a category. Drag icons to move them and click an icon to inspect a resource. The results list supplies keyboard access and pagination. Raised results show resource names, and GitHub repository links use distinct resource monograms. Fourteen featured resources have documentation-checked guidance. Drag resources into My project or use Add to project, enter a goal and stack, then copy or download a Markdown brief. Saved links and the project kit stay in the browser. Pause motion and reduced-motion support are available. Desktop and emulated-touch interactions, persistence, keyboard access and reduced motion were checked.
 
 ### Verification and remaining work
 
-November 2, 2026. TypeScript and production build passed. Browser checks covered search, icon selection, saved resources, details and agent access. The current merged index has 28,358 references, including 90 featured resources. Community-imported destination sites have not all been individually checked. Public deployment and the project pull request remain pending.
+November 2, 2026. All 17 Node tests, TypeScript and the production build passed. Independent review identified a browser-storage hydration issue; the fix and two regression tests were re-reviewed as resolved. A clean independent `npm ci` verified the portable lockfile, and `npm audit` reported zero vulnerabilities after patching the existing Next.js dependency to 16.4.4. No new dependency choices were added.
+
+Browser checks covered desktop and emulated touch, search, named results, drag and button additions, duplicate handling, persistence, keyboard access, reduced motion, brief copy/download, details and agent access. The current index has 28,358 references, including 90 featured resources; 14 have documentation-checked guidance. Community-imported destination sites and external libraries have not all been individually run or verified. No physical-phone, real-student or school-Wi-Fi testing is claimed.
+
+The branch is pushed and PR #2 is open for team review. The production deployment passed with the Next.js configuration. Unauthenticated public checks passed for the homepage, search, checked resource API and page, icons and agent guide. Deployed app revision: `c3e36b1`; later documentation-only commits preserve this app. Shared delivery documentation is in [PR #4](https://github.com/onbiggerthingsB/Hackathon/pull/4). The next team action is peer review and a real classroom trial. Leave the PR open for team review; do not merge or submit the organizer form.

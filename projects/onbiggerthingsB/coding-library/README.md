@@ -4,6 +4,8 @@ A searchable resource library for Science / Advanced Coding. Students explore a 
 
 The interface adapts the MIT-licensed physics and search presentation from [Aayan Ali's YC indexor](https://github.com/Aayan-DEV/aayans-yc-indexor). See LICENSE and NOTICE.
 
+[Open the live app](https://pomfret-coding-index.vercel.app) · [Project PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2)
+
 ## Run locally
 
 Use Node 20.9 or newer from this directory.
@@ -51,7 +53,7 @@ Rebuild the app after changing the catalog so the homepage's count matches the u
 - Up to 24 matching icons rise above the search bar with resource names. Click one to see its website, checked guidance when available, source and agent handoff. The text list keeps 60 results per page.
 - Use the results list for keyboard access, descriptions and pagination.
 - Saved resources stay in the current browser.
-- Drag an icon into My project, or choose Add to project in its details. Add a goal and setup constraints, then copy or download one Markdown brief containing up to 12 resources. The project kit persists in this browser; it is not automatically shared between devices.
+- Drag an icon into My project, or choose Add to project in its details. Add a goal and stack or setup constraints, then copy or download one Markdown brief containing up to 12 resources. The project kit persists in this browser; it is not automatically shared between devices.
 - For agents opens a copyable prompt and the machine-readable entry points.
 - Pause motion freezes the scene. Reduced-motion preferences are supported.
 
@@ -75,11 +77,16 @@ GitHub repository references use resource-specific monograms instead of repeatin
 
 Completed on November 2, 2026.
 
-- TypeScript check passed.
+- All 17 Node tests and the TypeScript check passed.
 - Production Next.js webpack build passed, including the data files in server traces.
 - Search and API assertions covered natural-language queries, unknown queries, pagination, invalid filters, record lookup and sampling.
 - Ego Browser checks covered the falling pile, rising results, selecting a physics icon, resource details, saved resources, keyboard dismissal, agent guide and narrow-screen layout.
 - New checks covered desktop and emulated touch drag-to-project, button-based addition, project persistence, a downloaded Markdown brief, reduced-motion operation, and mobile header clearance. Real classmates, physical phones and school Wi-Fi still need hands-on testing.
-- The current deliverable is a local preview. Public hosting and the team pull request remain separate integration steps.
+- Independent review found a browser-storage hydration issue; the fix and its regression tests were re-reviewed as resolved.
+- Next.js was patched to 16.4.4 within the existing dependency choice. A clean independent `npm ci` verified the portable lockfile; `npm audit` reported zero vulnerabilities. No new dependency choices were added.
+- The project branch is pushed and [PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2) is open for team review.
+- The Next.js production deployment passed. Unauthenticated public checks verified the homepage, search over 28,358 references, checked resource API and page, icons, agent guide and invalid-input responses. Vercel deployment: `dpl_HHpVp43R1GsY5DCjU8d6fWXGg8Vj`, app revision `c3e36b1`. Later documentation-only commits do not change that deployed app.
+- A live Ego Browser walkthrough confirmed search, checked guidance, collection, Markdown download and restoration of the goal, setup and resources after reload.
+- Shared team delivery documentation is tracked separately in [PR #4](https://github.com/onbiggerthingsB/Hackathon/pull/4).
 
 No external hardware is required for this version.
