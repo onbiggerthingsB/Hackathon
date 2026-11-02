@@ -61,4 +61,6 @@ Commit source files, dependency manifests, lockfiles, and required assets. Keep 
 
 Use a separate integration branch and pull request for a shared launcher, shared hardware input, or features used by several projects. Agree on shared interfaces as a team before moving code between project folders.
 
-The final hackathon brief will determine how we combine the projects. Record agreed requirements here once they are announced.
+The final challenge requires four public, web-accessible Matter.js simulations covering four different academic departments. Each simulation must name its department and specific class prominently and serve a real educational purpose. An entry can earn up to 4 points, for a team maximum of 16.
+
+Track department choices, owners, public links, pull requests, contribution evidence, reviewers, and remaining delivery checks in the [team delivery register](TEAM_DELIVERY.md). The register separates official requirements from our suggested readiness checks; unknown choices and unverified links stay marked pending.
