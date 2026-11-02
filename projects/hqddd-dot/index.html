@@ -377,7 +377,8 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-window.addEventListener('resize', resize);
+// Re-measure whenever the canvas changes size, including when a hidden page first becomes visible.
+new ResizeObserver(resize).observe(canvas);
 resize();
 newTarget();
 updateCard();
