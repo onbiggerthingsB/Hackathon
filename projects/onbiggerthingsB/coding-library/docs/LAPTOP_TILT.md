@@ -32,7 +32,7 @@ node scripts/motion.mjs --build-only
 
 The helper uses an undocumented Apple HID report format. Support depends on the Mac model, macOS version and sensor permissions. Some systems require administrator access or additional macOS permission. The launcher never elevates itself. Review any permission failure before deciding how to grant access. Swift must already be available on the machine.
 
-On November 2, 2026, the five-second probe on this M4 Pro MacBook Pro opened three motion devices and received 4,026 accelerometer reports under the normal user account. Physical tilt direction still needs a hands-on check. Lid readings outside the supported 30–170 degree opening range are sent as unavailable so the page can use its fallback.
+On November 2, 2026, the five-second probe on this M4 Pro MacBook Pro opened three motion devices and received 4,026 accelerometer reports under the normal user account. The owner then confirmed on the live site that icons move toward the lowered side for both left and right tilt. This verifies the live connection and physical direction on this Mac. Lid readings outside the supported 30–170 degree opening range are sent as unavailable so the page can use its fallback.
 
 ## Connection and cleanup
 
