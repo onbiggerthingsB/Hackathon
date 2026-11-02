@@ -2,6 +2,8 @@
 
 This is the project workspace for @hqddd-dot. Follow this guide when building the project and preparing it for the team to review.
 
+**Live public link: [Paint Mixer Challenge](https://hqddd-dot.github.io/paint-mixer/)** · Art · Painting & Drawing (Color Theory)
+
 | Item | Location |
 | --- | --- |
 | Repository | [onbiggerthingsB/Hackathon](https://github.com/onbiggerthingsB/Hackathon) |
@@ -57,7 +59,7 @@ Maintain project-specific details in this README. The root team table provides a
 | Department and class | Art · Painting & Drawing (Color Theory); also fits Freshman Arts Immersion: Painting & Drawing |
 | Main idea and goal | Paint drops fall into a bowl and, when they touch, merge and mix like real paint (blue + yellow = green). Students match target colors across 5 levels: secondary, tertiary, tints & shades, earth tones, and master mixes. Works as a class demo (the teacher projects it) or as homework (students open the link). |
 | Pull request | https://github.com/onbiggerthingsB/Hackathon/pull/3 |
-| Demo or screenshot | No hosted demo yet. Turning on GitHub Pages for `main` would give a public link. |
+| Demo or screenshot | [Live Paint Mixer](https://hqddd-dot.github.io/paint-mixer/), verified November 2, 2026. Hosted with GitHub Pages from [hqddd-dot/paint-mixer](https://github.com/hqddd-dot/paint-mixer), which holds a copy of `index.html` from this folder; update both together. |
 | App entry point | `projects/hqddd-dot/index.html` |
 | Hardware requirements | None. Any modern browser with a mouse, trackpad, or touch screen. |
 | Integration notes | One static HTML file with no build step. Matter.js 0.20.0 loads from cdnjs. A shared launcher can link straight to `projects/hqddd-dot/index.html`. |
@@ -85,5 +87,7 @@ Then open http://localhost:8000/. Opening `index.html` directly in a browser als
 ### Verification and remaining work
 
 - Ran it in the Claude desktop app's built-in Chromium browser at about 1024×700. Dropping an exact recipe (Orange = 1 Red + 1 Yellow) merged into one blob, scored 100%, and earned ★★★. Too many drops shows "Out of drops." No console errors.
+- Public link check, November 2: https://hqddd-dot.github.io/paint-mixer/ returned HTTP 200, showed the Art Department header, and loaded Matter.js 0.20.0. Dropping a recipe merged the paint and scored 100%. No console errors.
+- Fixed: the canvas now re-measures with a ResizeObserver, so the bowl appears even when the page first loads hidden.
 - Not yet tested: Safari, phones or tablets, and a classroom projector.
 - Next action for the reviewer: open `index.html`, play through Level 1, and check that the header shows the department and class clearly.
