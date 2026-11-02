@@ -14,16 +14,18 @@ The opening deck's eight technical exercises are preparation references. Whether
 
 ## Entry and ownership register
 
-The three unconfirmed entries below are tracking slots, not selected departments or approved projects. Confirm four distinct departments before treating coverage as complete. Science / Advanced Coding is the current Coding Index plan; confirm class eligibility with the organizer because Advanced Coding is outside the displayed class examples.
+Three projects now identify Science, Math, and Art as their departments. The fourth entry remains unconfirmed. Confirm four distinct departments before treating coverage as complete. Science / Advanced Coding is the current Coding Index plan; confirm class eligibility with the organizer because Advanced Coding is outside the displayed class examples.
 
 | Owner and project handoff | Project | Department / class | Public URL | Project PR | Contribution check | Reviewer |
 | --- | --- | --- | --- | --- | --- | --- |
 | [@onbiggerthingsB](projects/onbiggerthingsB/README.md) | The Coding Index | Science / Advanced Coding; class eligibility pending | [Live Coding Index](https://pomfret-coding-index.vercel.app), verified November 2 | [Project PR #2](https://github.com/onbiggerthingsB/Hackathon/pull/2) | [322da6c](https://github.com/onbiggerthingsB/Hackathon/commit/322da6ce1073f2a75d61d7a464c01fef8a010d39) attributed to onbiggerthingsB on the project branch; merge pending | Unassigned |
-| [@mtober27](projects/mtober27/README.md) | Unconfirmed | Unconfirmed | Pending | Pending permanent PR URL | Pending: verify authored commits on the submitted branch | Unassigned |
+| [@mtober27](projects/mtober27/README.md) | Galton Board | Math / Statistics | Pending; merged handoff reports no hosted demo | [PR #1, merged](https://github.com/onbiggerthingsB/Hackathon/pull/1) | [46305b5](https://github.com/onbiggerthingsB/Hackathon/commit/46305b56d3018306072c7fb267138dabb9539538) attributed to mtober27; merged in PR #1 | @onbiggerthingsB approved November 2 |
 | [@rfelsberg29-rgb](projects/rfelsberg29-rgb/README.md) | Unconfirmed | Unconfirmed | Pending | Pending permanent PR URL | Pending: verify authored commits on the submitted branch | Unassigned |
-| [@hqddd-dot](projects/hqddd-dot/README.md) | Unconfirmed | Unconfirmed | Pending | Pending permanent PR URL | Pending: verify authored commits on the submitted branch | Unassigned |
+| [@hqddd-dot](projects/hqddd-dot/README.md) | Paint Mixer Challenge | Art / Painting & Drawing (Color Theory) | Pending; merged handoff reports no hosted demo | [PR #3, merged](https://github.com/onbiggerthingsB/Hackathon/pull/3) | [2342a59](https://github.com/onbiggerthingsB/Hackathon/commit/2342a5959e0a700e7532f023253b6f28a85d48b2) attributed to hqddd-dot; merged in PR #3 | @onbiggerthingsB approved November 2 |
 
-Coding Index public HTTP checks passed on November 2: homepage, search over 28,358 references, checked resource API and page, icon delivery, agent guide, and invalid-input responses. Other entries remain unverified. A deployment project name is not a verified public URL. Replace each pending URL only after opening the actual public deployment and checking that it serves the intended version. Replace contribution placeholders with an authored commit link or other concrete evidence from the final submitted repository history.
+Coding Index public HTTP checks passed on November 2: homepage, search over 28,358 references, checked resource API and page, icon delivery, agent guide, and invalid-input responses. Other public deployments remain unverified. A deployment project name is not a verified public URL. Replace each pending URL only after opening the actual public deployment and checking that it serves the intended version. Replace contribution placeholders with an authored commit link or other concrete evidence from the final submitted repository history.
+
+The Galton Board and Paint Mixer entries above were checked against their merged PRs and current `main` handoffs on November 2. Both have recorded approvals from @onbiggerthingsB; neither handoff provides a public deployment URL. Galton Board still needs an independent user trial, and Paint Mixer still lists Safari, mobile/tablet, and projector testing as untested. Shared delivery documentation is tracked in [integration PR #4](https://github.com/onbiggerthingsB/Hackathon/pull/4).
 
 ## Suggested readiness checks
 
