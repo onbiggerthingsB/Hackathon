@@ -51,26 +51,42 @@ Maintain project-specific details in this README. The root team table provides a
 
 ## Project handoff
 
-Replace these placeholders as work progresses.
+Imported on November 3, 2026 from Ryan's [class-repository PR #1](https://github.com/Pomfret-Coders/fallhackathon2026/pull/1), source commit [`ed48b37`](https://github.com/rfelsberg29-rgb/fallhackathon2026/commit/ed48b37ef290375ad0c8fcc2bdede5043d61ee0d). The original four files from `teams/torque/` are preserved unchanged in `history-trebuchet/`, including Ryan's project README. This team import does not change or merge the class-repository PR.
 
 | Field | Current value |
 | --- | --- |
-| Project name | Awaiting the owner's choice |
-| Main idea and goal | Awaiting the project brief |
-| Pull request | Add the permanent PR URL after opening it |
-| Demo or screenshot | Add a link when available |
-| App entry point | Add the relative path |
-| Hardware requirements | List the exact devices or write `None` |
-| Integration notes | Describe how the team can launch or combine this project |
+| Project name | World History · The trebuchet (Team Torque) |
+| Main idea and goal | A Matter.js counterweight trebuchet illustration for History / World History. Compare the release speed and range of light and heavy counterweights against a wall 110 m away. |
+| Pull request | [Team repository PR #10](https://github.com/onbiggerthingsB/Hackathon/pull/10) |
+| Demo or screenshot | [Ryan's existing public demo](https://rfelsberg29-rgb.github.io/rfrepo26/history-trebuchet/) |
+| App entry point | [history-trebuchet/index.html](history-trebuchet/index.html) |
+| Hardware requirements | None. Standard browser with mouse, touch or keyboard controls. |
+| Integration notes | Standalone HTML/CSS/JavaScript. Matter.js 0.20.0 loads from cdnjs; an internet connection is required for that dependency. No API key, package installation or build step is needed. |
 
 ### Setup and run
 
-Add exact commands, their working directory, dependencies, environment variable names, and the local URL or other entry point.
+From the repository root:
+
+```sh
+cd projects/rfelsberg29-rgb/history-trebuchet
+python3 -m http.server 3012 --bind 127.0.0.1
+```
+
+Open http://127.0.0.1:3012/. Stop the server with Control-C. Any static file server can serve this folder. The public demo remains hosted in Ryan's personal repository; importing these files does not publish a second website.
 
 ### Controls and hardware
 
-Describe the controls, hardware connection steps, and any fallback mode. State which devices you actually tested.
+Choose a counterweight from 1× through 5× and click **Fire**. The readouts show range, release speed and wall distance; the shot log retains the latest six outcomes. Use **Reset** before another shot at the same weight. Changing the weight while idle also rebuilds the scene. **Pause/Resume** controls the simulation. Space fires and R resets when the weight slider is not focused.
+
+No external hardware or sensor connection is used. Browser interaction was tested on this computer; physical mobile-device testing was not performed.
 
 ### Verification and remaining work
 
-List the checks and manual interactions you ran, their results, remaining issues, and the next action for the reviewer.
+Verification on November 3, 2026:
+
+- The imported HTML, JavaScript, stylesheet and project README are byte-for-byte identical to the pinned source commit.
+- `node --check history-trebuchet/sim.js` and `git diff --check` passed.
+- Browser checks verified loading the Matter.js canvas, changing the weight, firing, resetting, pause/resume and the shot log. The 1× shot traveled 72.1 m at a displayed release speed of 36.0 m/s; 5× traveled 179.2 m at 78.8 m/s. These are observations from this run, not calibrated real-world measurements.
+- The desktop layout and an emulated 390-pixel phone layout were inspected. The next reviewer should also try the demo on a physical phone and the school network.
+
+The simulation is a qualitative teaching illustration: the arm motion is scripted and Matter.js simulates the released stone. Range recording can stop when a stone hits, leaves the visible field or reaches the time limit. After a completed shot, the original Fire control appears enabled but requires Reset or a weight change before it can launch again. This import preserves those source behaviors rather than changing Ryan's model. The team should review this PR before merging it into `main`.
