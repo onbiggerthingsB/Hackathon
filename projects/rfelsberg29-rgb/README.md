@@ -57,7 +57,7 @@ Imported on November 3, 2026 from Ryan's [class-repository PR #1](https://github
 | --- | --- |
 | Project name | World History · The trebuchet (Team Torque) |
 | Main idea and goal | A Matter.js counterweight trebuchet illustration for History / World History. Compare the release speed and range of light and heavy counterweights against a wall 110 m away. |
-| Pull request | Add the permanent PR URL after opening it |
+| Pull request | [Team repository PR #10](https://github.com/onbiggerthingsB/Hackathon/pull/10) |
 | Demo or screenshot | [Ryan's existing public demo](https://rfelsberg29-rgb.github.io/rfrepo26/history-trebuchet/) |
 | App entry point | [history-trebuchet/index.html](history-trebuchet/index.html) |
 | Hardware requirements | None. Standard browser with mouse, touch or keyboard controls. |
