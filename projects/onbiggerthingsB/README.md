@@ -57,7 +57,7 @@ Current handoff as of November 2, 2026.
 | --- | --- |
 | Project name | The Coding Index |
 | Main idea and goal | Searchable coding resource library for Science / Advanced Coding, with a Matter.js icon pile and agent-readable references |
-| Pull request | [Catalog and search polish PR #9](https://github.com/onbiggerthingsB/Hackathon/pull/9). The original app, laptop tilt and search focus updates are merged. |
+| Pull request | [Latest Coding Index improvements, PR #9](https://github.com/onbiggerthingsB/Hackathon/pull/9), open for team review. The original app, laptop tilt and search focus updates are merged. |
 | Demo or screenshot | [Live Coding Index](https://pomfret-coding-index.vercel.app), verified November 2, 2026 |
 | App entry point | `coding-library/app/page.tsx` |
 | Hardware requirements | Standard browser use needs none. Optional laptop tilt uses a compatible Apple Silicon MacBook's sensor and the local motion helper. |
@@ -76,5 +76,7 @@ Type a resource request and press Enter, or choose a category. Drag icons to mov
 Optional laptop tilt is documented in [the setup guide](coding-library/docs/LAPTOP_TILT.md). Run `npm run motion` from `coding-library/`, keep the terminal open, then enable Laptop tilt on the site. The helper sends motion readings directly to the page on the same computer.
 
 The [November 2 catalog review](coding-library/docs/CATALOG_REVIEW.md) covers the full community collection and all featured additions. Run `npm test`, `npm run typecheck` and `npm run build` inside the app. Desktop and narrow-screen browser checks covered typing, opening results, keyboard hints and reduced motion. A peer test on school Wi-Fi is still open.
+
+The latest update improves conversational search, groups duplicate website/repository picks, adds format filters and puts project actions near the resource title. It retains source summaries for 21,241 community records and adds 15 reviewed resources. The neutral glass tray, typing glow and resource pages are included. Pause persists across page visits, and background physics and glow stop behind dialogs. All 152 tests and the production build passed; browser checks covered phone layouts, keyboard focus, saved identity, filtered return links and Markdown downloads. The team can review and merge PR #9 when ready.
 
 The new tilt helper received 4,026 fresh accelerometer reports during a five-second probe on the M4 Pro MacBook Pro. The local browser received real sensor data, and calibration, pause/resume and switching tilt off were checked. Automated tests cover stale readings and teardown. On November 2, 2026, the owner confirmed that the live site's icons move toward the lowered side in both directions, completing the live-connection and physical-direction checks on this Mac. The classroom walkthrough is documented in the [demo guide](coding-library/docs/CLASSROOM_DEMO.md).
