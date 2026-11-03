@@ -7,7 +7,7 @@ The educational purpose is to help students compare coding resources, explain a 
 ## Demonstration
 
 1. Start with a concrete class project, such as a homework dashboard with due dates and a completed filter.
-2. Search for `components for a dashboard`. Explain that search ranks catalog words and synonyms; the rank is not a quality score.
+2. Enter the whole project idea in the search box. Open the results list and look at the first three suggestions. Try adding your framework when it matters to your choice.
 3. Open Material UI or another result. Read its use case, framework, setup estimate and caveat. Compare it with another candidate.
 4. Drag a useful icon into My project, or use Add to project. Physics drives exploration and collecting resources. The text list and buttons provide an alternative.
 5. Enter the project goal and existing setup. Choose only the resources that deserve comparison; the tray holds up to twelve.
@@ -26,6 +26,8 @@ Run this with a beginner, an intermediate student and an advanced student. These
 - Record where they hesitate, whether the links work, and whether the resulting choice fits the goal.
 - Check the public site on a classroom laptop and school Wi-Fi. Record failures before expanding the catalog.
 
-## Honest limits
+For a motion project, search for `microinteractions`. Compare a button example from Amicro with a press study from Craft by Gustavo Fior. Have the agent explain how the interaction should behave when a student enables reduced motion.
 
-The index contains 28,358 references and 90 featured resources. Fourteen featured resources currently include checked documentation guidance. The remaining destinations have not all been individually verified. Setup difficulty is an editorial estimate; a documentation check is not a runtime certification. Kits stay in the current browser and are not shared between devices automatically.
+## What the review covers
+
+The [catalog review](CATALOG_REVIEW.md) records which references were inspected by hand, how the community collection was screened, and which links could not be verified. The API returns the current totals in `indexed` and `totalFeatured`. Setup difficulty is an editorial estimate. Project kits stay in the current browser.

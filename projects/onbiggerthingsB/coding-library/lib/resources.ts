@@ -1,3 +1,7 @@
+import { getCommunityMetadata } from "./community-metadata.ts";
+import { groupCatalogProjects } from "./catalog-projects.ts";
+import { readRequirements } from "./resource-access.ts";
+import { resourceIconUrl } from "./resource-icon.ts";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -26,6 +30,13 @@ export interface ResourceGuidance {
   sourceUrls: string[];
 }
 
+export type ResourceRequirements = {
+  apiKey: "required" | "not-required" | "conditional";
+  note: string;
+  sourceUrl: string;
+  checkedAt: string;
+};
+
 export type Resource = {
   id: string;
   name: string;
@@ -40,6 +51,10 @@ export type Resource = {
   featured: boolean;
   icon: string;
   guidance?: ResourceGuidance;
+  requirements?: ResourceRequirements;
+  projectLinks?: { label: string; url: string }[];
+  projectGuidanceFrom?: string;
+  relatedTools?: { id: string; name: string }[];
 };
 
 export type ResourceResult = Resource & { score: number };
@@ -51,6 +66,7 @@ export type ResourceSearch = {
   resources: ResourceResult[];
   indexed: number;
   totalFeatured: number;
+  filters?: { apiKey?: "not-required"; account?: "not-required" };
 };
 
 type SearchOptions = {
@@ -66,9 +82,12 @@ type IndexedResource = {
   name: string;
   names: Set<string>;
   tags: Set<string>;
+  guidance?: Set<string>;
+  accessNotes?: Set<string>;
+  frameworks?: Set<string>;
   description: string;
   words: Set<string>;
-  location: string;
+  urlWords: Set<string>;
 };
 
 type Catalog = {
@@ -76,16 +95,56 @@ type Catalog = {
   resources: Resource[];
   featured: Resource[];
   byId: Map<string, Resource>;
+  byUrl: Map<string, Resource>;
+  alternateOf: Map<string, Resource>;
+  namedProjects: Map<string, Resource>;
+  preferredProjects: Map<string, Resource | null>;
   index: IndexedResource[];
+  frequencies: Map<string, number>;
 };
 
 let catalog: Catalog | undefined;
 
-const stopWords = new Set("a am an and anything are as at be by can could create find for from get give help how i in is it looking m me my need of on or our please re searching show something that the to use using want we website with would".split(" "));
+const stopWords = new Set("a am an and anything are as at be by can could create find for from get give help how i in is it looking m me my need of on or our please re searching show something that the to use using want we website with would what which who where when why that they them their people let like works work you your it s ve does do did new through".split(" "));
+const stackTerms = new Set([
+  "react", "vue", "svelte", "angular", "solid", "nextjs", "nuxtjs", "tailwind", "bootstrap",
+  "javascript", "typescript", "css", "html", "python", "rust", "java", "go", "kotlin", "swift", "php",
+  "flutter", "dart", "angularjs", "jquery", "reactnative", "nativewind", "swiftui", "blazor", "dotnet",
+]);
+const uiFrameworks = new Set(["react", "vue", "svelte", "angular", "solid"]);
+const resourceTypeWords = new Set(["api", "tool", "resource", "library", "package", "repo"]);
+const accessibilityTerms = new Set(["accessible", "accessibility", "a11y"]);
 const interfaceObjects = new Set(["card", "button", "panel", "menu", "modal", "list", "element"]);
+const webPerformanceTerms = ["web", "website", "browser", "frontend", "pagespeed", "chrome", "javascript", "nextjs", "react"];
+const webInterfaceTerms = ["web", "website", "browser", "frontend", "javascript", "typescript", "css", "html", "dom", "ui", "nextjs", "nuxtjs", ...uiFrameworks];
+const diagnosticTerms = ["audit", "auditing", "testing", "test", "debug", "debugging", "diagnose", "investigate", "profiling", "benchmark", "report", "measure", "measuring", "network", "vitals"];
 const aliases: Record<string, string[]> = {
   component: ["component", "ui", "designsystem"],
+  modal: ["modal", "dialog"],
+  dialog: ["dialog", "modal"],
+  check: ["check", "audit", "testing", "verification"],
+  audit: ["audit", "check", "testing"],
+  login: ["login", "signin", "authentication"],
+  authenticate: ["authenticate", "authentication"],
+  upload: ["upload", "uploader", "uploading"],
+  dragdrop: ["dragdrop", "dropzone", "drag", "draggable"],
+  drop: ["drop", "dropzone", "dragdrop", "draggable"],
+  pick: ["pick", "picker", "datepicker", "choose"],
+  date: ["date", "datepicker", "calendar"],
+  bounce: ["bounce", "spring", "physics"],
+  drag: ["drag", "draggable", "gesture"],
+  map: ["map", "mapping", "geospatial"],
+  place: ["place", "location", "marker"],
+  soccer: ["soccer", "football"],
+  picture: ["picture", "image", "photo"],
+  signup: ["signup", "registration", "register"],
+  codebase: ["codebase", "repository", "repo", "instructions"],
+  uploader: ["uploader", "upload", "picker"],
+  scroll: ["scroll", "scrolling"],
+  scrolling: ["scrolling", "scroll"],
+  transition: ["transition", "animation"],
   icon: ["icon", "symbol", "pictogram"],
+  navbar: ["navbar", "navigation", "menu"],
   animation: ["animation", "motion", "animate"],
   animate: ["animate", "animation", "motion"],
   animated: ["animated", "animation", "motion"],
@@ -108,6 +167,7 @@ const aliases: Record<string, string[]> = {
 function normalize(value: string): string {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
     .replace(/c\+\+/g, " cpp ").replace(/c#/g, " csharp ").replace(/\.net\b/g, " dotnet ")
+    .replace(/\b(react|vue|svelte|angular|solid)\.?js\b/g, "$1").replace(/\b(next|nuxt)\.js\b/g, "$1js")
     .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -119,6 +179,10 @@ function stem(word: string): string {
 
 function words(value: string): string[] {
   return normalize(value).split(/\s+/).filter(Boolean).map(stem);
+}
+
+function projectPhrase(value: string): string {
+  return value.split(/\s+/).filter(word => !["a", "an", "the", "for"].includes(word)).join(" ");
 }
 
 function webUrl(value: unknown): string | undefined {
@@ -188,11 +252,12 @@ function fileSignature(file: string): string {
 
 function loadCatalog(): Catalog {
   const files = ["coding-resources.json", "community-resources.json"].map(file => path.join(process.cwd(), "data", file));
-  const signature = files.map(fileSignature).join("|");
+  const aliasFile = path.join(process.cwd(), "data", "community-id-aliases.json");
+  const signature = [...files, aliasFile].map(fileSignature).join("|");
   if (catalog?.signature === signature) return catalog;
 
   const byId = new Map<string, Resource>();
-  const canonicalUrls = new Set<string>();
+  const byUrl = new Map<string, Resource>();
   files.forEach((file, fileIndex) => {
     for (const raw of readCatalogFile(file)) {
       if (!raw || typeof raw !== "object") continue;
@@ -201,7 +266,7 @@ function loadCatalog(): Catalog {
       const sourceUrl = webUrl(item.sourceUrl);
       if (!url || !sourceUrl || typeof item.name !== "string" || !item.name.trim()) continue;
       const canonical = canonicalUrl(url);
-      if (canonicalUrls.has(canonical)) continue;
+      if (byUrl.has(canonical)) continue;
       const category = String(item.category) as ResourceCategory;
       const kind = String(item.kind) as ResourceKind;
       if (!Object.hasOwn(resourceCategories, category) || !resourceKinds.includes(kind)) continue;
@@ -210,37 +275,54 @@ function loadCatalog(): Catalog {
       const suppliedId = typeof item.id === "string" ? item.id.replace(/[^a-zA-Z0-9_-]/g, "-") : "";
       let id = suppliedId || `resource-${hash}`;
       if (byId.has(id)) id = `${id}-${hash}`;
+      const review = fileIndex === 1 ? getCommunityMetadata(id) : undefined;
       const resource: Resource = {
         id,
-        name: item.name.trim(),
+        name: review?.name ?? item.name.trim(),
         url,
         sourceUrl,
-        description: typeof item.description === "string" ? item.description.trim() : "",
+        description: review?.description ?? (typeof item.description === "string" ? item.description.trim() : ""),
         category,
-        kind,
+        kind: review?.kind ?? kind,
         tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === "string").slice(0, 30) : [],
         agentUrl: webUrl(item.agentUrl),
         origin: fileIndex === 0 ? "curated" : "community-index",
         featured: fileIndex === 0,
-        guidance: fileIndex === 0 ? parseResourceGuidance(item.guidance) : undefined,
-        icon: `/api/resource-icon/${encodeURIComponent(id)}?v=2`,
+        guidance: parseResourceGuidance(fileIndex === 0 ? item.guidance : review?.guidance),
+        requirements: readRequirements(review?.requirements),
+        icon: resourceIconUrl(id),
       };
       byId.set(id, resource);
-      canonicalUrls.add(canonical);
+      byUrl.set(canonical, resource);
     }
   });
 
   const resources = [...byId.values()];
-  const index = resources.map(resource => ({
+  const projectIndex = groupCatalogProjects(resources, byId, normalize);
+  // Historical links resolve to the same record without adding results to search.
+  const previousIds: Record<string, string> = JSON.parse(readFileSync(aliasFile, "utf8"));
+  for (const [oldId, currentId] of Object.entries(previousIds)) {
+    const current = byId.get(currentId);
+    if (current && !byId.has(oldId)) byId.set(oldId, current);
+  }
+  const index = resources.filter(resource => !projectIndex.alternateOf.has(resource.id)).map(resource => ({
     resource,
     name: normalize(resource.name),
     names: new Set(words(resource.name)),
     tags: new Set(words([...resource.tags, resource.category, resource.kind].join(" "))),
     description: normalize(resource.description),
     words: new Set(words(resource.description)),
-    location: normalize(resource.url),
+    guidance: resource.guidance && new Set(words(resource.guidance.bestFor)),
+    accessNotes: resource.requirements && new Set(words(resource.requirements.note)),
+    frameworks: resource.guidance && new Set(words(resource.guidance.frameworks.join(" "))),
+    urlWords: new Set(words(resource.url)),
   }));
-  catalog = { signature, resources, featured: resources.filter(item => item.featured), byId, index };
+  const frequencies = new Map<string, number>();
+  for (const entry of index) {
+    const seen = new Set([...entry.names, ...entry.tags, ...entry.words, ...(entry.guidance ?? [])]);
+    for (const term of seen) frequencies.set(term, (frequencies.get(term) ?? 0) + 1);
+  }
+  catalog = { signature, resources, featured: resources.filter(item => item.featured), byId, byUrl, index, frequencies, ...projectIndex };
   return catalog;
 }
 
@@ -256,67 +338,327 @@ export function getResource(id: string): Resource | undefined {
   return loadCatalog().byId.get(id);
 }
 
-function tokenScore(entry: IndexedResource, token: string, interfaceMotion: boolean): number {
+function mentions(entry: IndexedResource, term: string): boolean {
+  return entry.names.has(term) || entry.tags.has(term) || !!entry.frameworks?.has(term);
+}
+
+function tokenScore(entry: IndexedResource, alternatives: string[], allowPrefix = false): number {
   let best = 0;
-  // Element-animation libraries can apply to cards or buttons even when the
-  // catalog describes their general component support instead of each shape.
-  const alternatives = interfaceMotion && interfaceObjects.has(token)
-    ? [token, "element", "component", "ui"]
-    : aliases[token] ?? [token];
-  for (const [index, alternative] of alternatives.entries()) {
+  for (const [index, term] of alternatives.entries()) {
     let score = 0;
-    if (entry.names.has(alternative)) score = 18;
-    else if (entry.tags.has(alternative)) score = 12;
-    else if (entry.words.has(alternative)) score = 4;
-    else if (alternative.length >= 3 && [...entry.names, ...entry.tags].some(word => word.startsWith(alternative))) score = 3;
-    else if (alternative.length >= 3 && entry.location.includes(alternative)) score = 1;
-    best = Math.max(best, index === 0 ? score : score * 0.7);
+    if (entry.names.has(term)) score = 18;
+    else if (entry.tags.has(term) || entry.frameworks?.has(term)) score = 12;
+    else if (entry.guidance?.has(term)) score = 10;
+    else if (entry.words.has(term)) score = 4;
+    else if (allowPrefix && term.length >= 4) {
+      for (const set of [entry.names, entry.tags]) {
+        for (const word of set) {
+          if (word.startsWith(term)) {
+            score = 3;
+            break;
+          }
+        }
+        if (score) break;
+      }
+      if (!score && entry.urlWords.has(term)) score = 1;
+    }
+    // A synonym can score at most 0.6 × 18. A direct name or tag wins.
+    if (index === 0 && score >= 12) return score;
+    best = Math.max(best, index === 0 ? score : score * 0.6);
   }
   return best;
+}
+
+// Collapse requirements before tokenization so verbs such as "require" never
+// become the excluded term in "does not require React".
+const exclusionMarker = /\b(?:does not|do not|doesn t|don t|without|no|not|never|excluding|except|avoid(?:ing)?)\b/g;
+const excludedDependency = /\bexclude (?:(?:having|have|need(?:ing)?|want(?:ing)?) to )?(?:us(?:e|es|ing)|need(?:s|ing)?|requir(?:e|es|ing)|install(?:ing)?|includ(?:e|ing)|provid(?:e|ing)|obtain(?:ing)?|register(?:ing)? for|sign(?:ing)? up for|depend(?:s|ing)? on|rely on|built with|a dependency on|dependency on|want)\b/g;
+const noKeyPhrase = /\b(?:exclude (?:an? |any )?(?:api |access )?keys?(?: (?:(?:is|are) )?(?:needed|required))?|(?:api |access )?keys? (?:is |are )?(?:exclude (?:needed|required)|optional)|keyless|api key free)\b/g;
+
+function hasExcludedTerm(entry: IndexedResource, excluded: readonly string[]) {
+  // Frameworks listed in the reviewed guide may be alternative implementations
+  // (e.g. Headless UI has separate React and Vue packages).
+  const alternative = [...uiFrameworks].some(stack => entry.frameworks?.has(stack) && !excluded.includes(stack));
+  return excluded.some(term => {
+    if (uiFrameworks.has(term) && alternative) return false;
+    return mentions(entry, term) || entry.words.has(term) || !!entry.guidance?.has(term);
+  });
+}
+
+function planSearch(query: string, catalog: Catalog) {
+  const normalized = normalize(query.replace(/(^|\s)-(\w+)/g, "$1without $2"));
+  const constraints = normalized.replace(/\b(?:that )?works? without\b/g, "without")
+    .replace(exclusionMarker, "exclude").replace(excludedDependency, "exclude");
+  const withoutKeyPhrase = constraints.replace(noKeyPhrase, " ");
+  const keyless = constraints !== withoutKeyPhrase;
+  const accountless = /\bexclude (?:an? |any )?(?:accounts?|registration|sign ?up|signing up|register(?:ing)?)\b/.test(constraints);
+  const commercial = /\bcommercial\b/.test(normalized.replace(/\bnon commercial\b/g, ""));
+  const plainJS = /\b(?:plain|vanilla|pure) (?:js|javascript)\b/.test(normalized);
+  const nativeApiPhrase = /\b(?:(?:only|native|built in|standard) browser apis?|browser apis? only)\b/g;
+  const withoutNativePhrase = withoutKeyPhrase.replace(nativeApiPhrase, " ");
+  const nativeApis = withoutNativePhrase !== withoutKeyPhrase;
+  const performanceRequest = normalized
+    .replace(/\bslow(?:ly)? (?:motion|animations?|transitions?)\b/g, "")
+    .replace(/\b(?:animation|motion|playback|transition) speed\b/g, "");
+  const webPerformance = /\b(?:web|website|site|page|browser|frontend)\b/.test(performanceRequest)
+    && /\b(?:slow|slowly|sluggish|speed|performance|(?:load|loading|rendering) time)\b/.test(performanceRequest);
+  const webLoadingVisual = /\b(?:web|website|site|page|browser|frontend)\b/.test(normalized)
+    && /\b(?:loading|loaders?)\b/.test(normalized)
+    && /\b(?:animations?|animated|spinners?|indicators?|progress|skeletons?|loaders?)\b/.test(normalized);
+  const framed = withoutNativePhrase
+    .replace(/\bslow motion\b/g, "motion")
+    .replace(/\b(?:control|change|adjust) (?:the )?(animation|motion|playback|transition) speed\b/g, "$1")
+    .replace(/^(?:find out|figure out|help me understand) /, "")
+    .replace(/\b(?:plain|vanilla|pure) (?:javascript|js)\b/g, "javascript")
+    .replace(/\bjs\b/g, "javascript")
+    .replace(/^(?:what|which) (?:tools?|libraries|resources?) (?:can|should|could) (?:i|we) use (?:to|for) /, "")
+    .replace(/^(?:learn how to|help me learn how to|i m trying to|i am trying to) /, "")
+    .replace(/^(?:i d like to |i would like to |can you help me )/, "")
+    .replace(/\b(?:to|am|m|are|re)\s+(?:build|building|make|making|create|creating)\b/g, " ")
+    .replace(/\b(?:build|building|make|making|add|adding)\s+(?:a|an|my|our)\b/g, " ")
+    .replace(/\bwalk ((?:my |our |an? )?\w+) through\b/g, "$1")
+    .replace(/\b(?:my|our|this|the|a|an) ([a-z0-9]+) (?:web ?site|site|webpage|app|project)\b/g, "$1")
+    .replace(/\b(?:my|our|this|the) (?:web ?site|site|webpage)\b/g, " ")
+    .replace(/\bsign up\b/g, "signup")
+    .replace(/\b(?:sign|log) (?:in|into)\b/g, "login")
+    .replace(/\bdrag (?:and |n )?drop\b/g, "dragdrop")
+    .replace(/\bauthenticat(?:e|ing) (?:the )?users?\b/g, "authentication");
+  const raw = words(framed);
+  const excluded = new Set<string>();
+  const anyOf: string[][] = [];
+  const terms = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === "exclude" && i + 1 < raw.length) {
+      excluded.add(raw[++i]);
+      while (["and", "or"].includes(raw[i + 1]) && stackTerms.has(raw[i + 2])) {
+        excluded.add(raw[i + 2]);
+        i += 2;
+      }
+    } else if (stackTerms.has(raw[i]) && raw[i + 1] === "or" && stackTerms.has(raw[i + 2])) {
+      const options = [raw[i]];
+      while (raw[i + 1] === "or" && stackTerms.has(raw[i + 2])) {
+        options.push(raw[i + 2]);
+        i += 2;
+      }
+      anyOf.push(options);
+    } else if (!stopWords.has(raw[i])) terms.add(raw[i]);
+  }
+  if (webPerformance) {
+    for (const term of ["web", "site", "page", "browser", "frontend", "slow", "slowly", "sluggish", "speed", "load", "loading", "measure", "out"]) terms.delete(term);
+    terms.add("performance");
+  } else if (webLoadingVisual) {
+    // The target platform is checked separately; it must not outweigh the
+    // requested loading state with generic website and landing-page matches.
+    for (const term of ["web", "site", "page", "browser", "frontend"]) terms.delete(term);
+  }
+  const taskBoard = terms.has("kanban") || /\b(?:columns?|lanes?)\b/.test(framed)
+    && (/\b(?:to ?do|in progress|backlog)\b/.test(framed) && /\b(?:done|completed?|finish(?:ed)?)\b/.test(framed)
+      || /\b(?:cards?|tasks?|tickets?)\b/.test(framed) && /\b(?:move|moving|drag|dragging)\b/.test(framed) && /\b(?:between|across)\b/.test(framed));
+  if (taskBoard) terms.add("kanban");
+  const motionQuery = [...terms].some(term => ["animate", "animated", "animating", "animation", "motion"].includes(term));
+  const content = [...terms].filter(term => !stackTerms.has(term));
+  const subject = new Set(words(framed.split(/\b(?:that|where|with|of|for|when)\b/)[0]).filter(term => content.includes(term)));
+  // A rare literal name in the main noun phrase provides enough evidence even
+  // if details such as "drag cards between columns" only match generic tools.
+  const [firstSubject] = subject;
+  const frequency = (word: string) => catalog.frequencies.get(word) ?? 0;
+  const rareSubject = firstSubject && subject.size > 1 && !Object.hasOwn(aliases, firstSubject)
+    && frequency(firstSubject) > 0 && frequency(firstSubject) <= catalog.index.length / 2000 ? firstSubject : undefined;
+  const interfaceMotion = motionQuery && [...terms].some(term => interfaceObjects.has(term));
+  const audit = terms.has("check") && [...accessibilityTerms].some(term => terms.has(term));
+  const browserTest = (terms.has("test") || terms.has("testing")) && [...terms].some(term => ["login", "checkout", "page", "form", "signup"].includes(term));
+  const fileUpload = (terms.has("upload") || terms.has("uploader")) && terms.has("file");
+  const loginForm = terms.has("login") && terms.has("form");
+  // A classroom subject can help rank a dashboard or a test without being
+  // a requirement of the general-purpose tool that implements it.
+  let focus: string[] = [];
+  if (webPerformance) focus = ["performance"];
+  else if (webLoadingVisual) focus = ["loading", "loader"];
+  else if (terms.has("icon")) focus = ["icon"];
+  else if (browserTest) focus = ["test", "testing"];
+  else if (fileUpload) focus = ["file", "upload", "uploader"];
+  else if (loginForm) focus = ["form"];
+  else if (terms.has("dashboard")) focus = ["dashboard"];
+  else if (terms.has("debug") || terms.has("debugging")) focus = ["debug", "debugging"];
+  else if (terms.size >= 3) focus = ["scroll", "scrolling", "transition"].filter(term => terms.has(term));
+  return {
+    excluded: [...excluded], anyOf, keyless, accountless, commercial, plainJS, nativeApis, browserTest, fileUpload, loginForm, interfaceMotion, webPerformance, webLoadingVisual,
+    contentCount: content.length,
+    needsBehavior: /\b(?:that|when)\b/.test(framed) && ["bounce", "drag", "animate"].some(term => terms.has(term)),
+    terms: [...terms].map(term => {
+      const alternatives = audit && term === "check" ? ["audit", "check", "testing"]
+        : interfaceMotion && interfaceObjects.has(term) ? [term, "element", "component", "ui", "dom", "css"]
+        : Object.hasOwn(aliases, term) ? aliases[term] : [term];
+      const frequency = Math.max(...alternatives.map(word => catalog.frequencies.get(word) ?? 0));
+      return {
+        term, alternatives, stack: stackTerms.has(term), rareSubject: term === rareSubject || (taskBoard && term === "kanban"),
+        subject: subject.size === 1 && subject.has(term) && !resourceTypeWords.has(term),
+        focus: focus.includes(term),
+        required: focus.includes(term) || stackTerms.has(term) || accessibilityTerms.has(term) || (taskBoard && term === "kanban"),
+        importance: 1 + Math.min(5, Math.log((catalog.index.length + 1) / (frequency + 1))) / 6,
+      };
+    }),
+  };
 }
 
 /** Deterministic metadata search. Scores are ranking weights, not probabilities. */
 export function searchResources(options: SearchOptions = {}): ResourceSearch {
   const current = loadCatalog();
   const query = (options.query ?? "").trim().slice(0, 300);
-  const normalized = normalize(query);
-  // Remove request framing while retaining meaningful searches such as
-  // "build tools" and "building simulation".
-  const searchable = normalized
-    .replace(/\b(?:to|am|m|are|re)\s+(?:build|building|make|making|create|creating)\b/g, " ")
-    .replace(/\b(?:build|building|make|making)\s+(?:a|an|my|our)\b/g, " ");
-  const tokens = [...new Set(words(searchable).filter(word => !stopWords.has(word)))];
-  const interfaceMotion = tokens.some(token => ["animate", "animated", "animating", "animation", "motion"].includes(token));
-  const broadQuery = tokens.length === 1 && Object.hasOwn(aliases, tokens[0]);
   const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(100, Math.trunc(options.limit!))) : 30;
   const offset = Number.isFinite(options.offset) ? Math.max(0, Math.trunc(options.offset!)) : 0;
+  const base = { query, offset, limit, indexed: current.resources.length, totalFeatured: current.featured.length };
+  const inScope = (resource: Resource) =>
+    (!options.category || options.category === "all" || resource.category === options.category)
+    && (!options.kind || options.kind === "all" || resource.kind === options.kind);
+  const url = webUrl(query) ?? (/^(?:www\.|[a-z0-9.-]+\.[a-z]{2,}\/)/i.test(query) ? webUrl(`https://${query}`) : undefined);
+  if (url) {
+    const destination = current.byUrl.get(canonicalUrl(url));
+    const primary = destination && current.alternateOf.get(destination.id);
+    const resource = primary && inScope(primary) ? primary : destination;
+    const matches = resource && inScope(resource) ? [{ ...resource, score: 1000 }] : [];
+    return { ...base, total: matches.length, resources: matches.slice(offset, offset + limit) };
+  }
+  const normalized = normalize(query);
+  const conversation = normalized.split(/\s+/);
+  while (conversation.length > 1 && stopWords.has(conversation[0])) conversation.shift();
+  const request = conversation.join(" ");
+  // "Motion" is also a discovery category. Keep ordinary topic queries broad.
+  const projectName = request
+    .replace(/^(?:github repo|github|documentation|docs|website|community guide) (?:for |of )?/, "")
+    .replace(/ (?:github repo|github|repository|source code|documentation|docs|official site|website|community guide|component library|components)$/, "");
+  const project = Object.hasOwn(aliases, request) ? undefined : current.namedProjects.get(normalized) ??
+    current.namedProjects.get(request) ?? current.namedProjects.get(projectName) ??
+    (projectName !== request ? current.preferredProjects.get(projectName) : undefined);
+  if (project) {
+    let choices = [project];
+    if (!inScope(project)) {
+      // A format/category filter can ask for a companion tool or a course on the project.
+      const related = new Set(project.relatedTools?.map(tool => tool.id));
+      choices = current.index.filter(entry => inScope(entry.resource)
+        && (related.has(entry.resource.id) || (" " + entry.name + " ").includes(" " + projectName + " ")))
+        .map(entry => entry.resource);
+    }
+    return { ...base, total: choices.length, resources: choices.slice(offset, offset + limit).map(item => ({ ...item, score: 1000 })) };
+  }
+  const plan = planSearch(query, current);
+  // Account access has not been reviewed in this catalog. A keyless endpoint does
+  // not establish that it can be used without registering an account.
+  if (plan.accountless) return { ...base, total: 0, resources: [], filters: { account: "not-required", ...(plan.keyless && { apiKey: "not-required" as const }) } };
+  // Once a query starts with a specific project, a word like "design" or "table"
+  // can't by itself qualify an unrelated result. Prefer the longest named variant.
+  const familyNames = new Map<string, Resource | null>();
+  for (const [name, item] of current.namedProjects) {
+    const phrase = projectPhrase(name);
+    if (!familyNames.has(phrase)) familyNames.set(phrase, item);
+    else if (familyNames.get(phrase)?.id !== item.id) familyNames.set(phrase, null);
+  }
+  const familyRequest = projectPhrase(request);
+  let familyPrefix = familyRequest;
+  let family: Resource | undefined;
+  while (familyPrefix.includes(" ") && !family) {
+    familyPrefix = familyPrefix.slice(0, familyPrefix.lastIndexOf(" "));
+    if (!Object.hasOwn(aliases, familyPrefix) && !stackTerms.has(familyPrefix)) family = familyNames.get(familyPrefix) ?? undefined;
+  }
+  const relatedIds = new Set(family?.relatedTools?.map(tool => tool.id));
+  const brandPhrase = " " + familyPrefix + " ";
+  const familyTerms = new Set(words(familyPrefix));
+  const modifiers = family ? plan.terms.map(item => item.term).filter(term => !familyTerms.has(term)) : [];
+  const broadQuery = plan.terms.length === 1 && Object.hasOwn(aliases, plan.terms[0].term);
+  const preferred = !broadQuery && current.preferredProjects.get(normalized);
   const matches: ResourceResult[] = [];
 
   for (const entry of current.index) {
-    if (options.category && options.category !== "all" && entry.resource.category !== options.category) continue;
-    if (options.kind && options.kind !== "all" && entry.resource.kind !== options.kind) continue;
-    // Broad queries should lead with the class's selected starting points.
-    let score = entry.resource.featured ? 80 : 0;
-    if (query) {
-      if (!tokens.length) continue;
-      const scores = tokens.map(token => tokenScore(entry, token, interfaceMotion));
-      if (scores.some(weight => weight === 0)) continue;
-      score += scores.reduce((sum, weight) => sum + weight, 0);
-      if (entry.name === normalized) score += broadQuery ? 60 : 150;
-      else if (entry.name.includes(normalized)) score += broadQuery ? 20 : 45;
+    if (!inScope(entry.resource)) continue;
+    // "Loading" can describe native asset rendering too. An explicit website
+    // loading indicator request needs evidence of a web interface implementation.
+    if (plan.webLoadingVisual && !webInterfaceTerms.some(term =>
+      mentions(entry, term) || entry.words.has(term) || entry.guidance?.has(term))) continue;
+    if (plan.webPerformance) {
+      const webContext = webPerformanceTerms.some(term => mentions(entry, term) || entry.words.has(term) || entry.guidance?.has(term));
+      if (!webContext) continue;
+      if (entry.resource.kind === "tool" && !diagnosticTerms.some(term =>
+        mentions(entry, term) || entry.words.has(term) || entry.guidance?.has(term))) continue;
+    }
+    if (family && entry.resource.id !== family.id) {
+      const namesProject = (" " + projectPhrase(entry.name) + " ").includes(brandPhrase) || (" " + projectPhrase(entry.description) + " ").includes(brandPhrase);
+      if (!relatedIds.has(entry.resource.id) && !namesProject) continue;
+      if (modifiers.length && !modifiers.some(term => tokenScore(entry, Object.hasOwn(aliases, term) ? aliases[term] : [term]) >= 4)) continue;
+    }
+    if (plan.keyless) {
+      const key = entry.resource.requirements?.apiKey;
+      if (key !== "not-required" && !(key === "conditional" && !plan.commercial)) continue;
+    }
+    let score = entry.resource.featured ? (plan.terms.length > 1 ? 32 : 80) : 0;
+    if (entry.resource === preferred) {
+      // For topics like React keep courses and tools visible after the project itself.
+      score += 1200;
+    } else if (query && entry.name === normalized) {
+      // Names such as "No-Login Web Apps" contain ordinary search operators.
+      score += broadQuery ? 60 : 1000;
+    } else if (query) {
+      if (plan.nativeApis && !(entry.resource.kind === "documentation" && (entry.frameworks?.has("browser") || entry.tags.has("webplatform")))) continue;
+      if (!plan.terms.length && !plan.excluded.length && !plan.anyOf.length && !plan.keyless) continue;
+      if (plan.anyOf.some(options => !options.some(term => mentions(entry, term)))) continue;
+      if (plan.excluded.length && hasExcludedTerm(entry, plan.excluded)) continue;
+      if (plan.plainJS) {
+        const vanilla = entry.tags.has("vanilla") || entry.names.has("vanilla") || entry.frameworks?.has("vanilla");
+        const nativeJS = entry.frameworks?.has("javascript")
+          && ![...uiFrameworks, "jquery"].some(term => entry.frameworks?.has(term));
+        if (!vanilla && !nativeJS) continue;
+      }
+      let eligible = true;
+      let matched = 0;
+      const explicitProject = entry.resource.id === family?.id;
+      let strongAnchor = explicitProject;
+      for (const {term, required, alternatives, stack, subject, importance, focus, rareSubject} of plan.terms) {
+        if (stack && !mentions(entry, term)) {
+          eligible = false;
+          break;
+        }
+        const weight = tokenScore(entry, alternatives, plan.terms.length === 1) || (plan.keyless && entry.accessNotes?.has(term) ? 4 : 0);
+        if (required && !weight && !(explicitProject && focus && !plan.webPerformance)) {
+          eligible = false;
+          break;
+        }
+        if (!weight) continue;
+        if (!stack) {
+          matched++;
+          if (rareSubject && (entry.names.has(term) || term === "kanban" && weight >= 4)) {
+            strongAnchor = true;
+            score += entry.resource.category === "components" ? 110 : 100;
+          }
+          if ((focus || subject) && weight >= 6 && !plan.needsBehavior) strongAnchor = true;
+        }
+        score += (weight + 8) * importance;
+        if (subject) score += weight;
+        if (focus && mentions(entry, term)) score += 14;
+      }
+      // A framework alone cannot satisfy an unknown feature request. A single
+      // specific subject (e.g. a chart of soccer scores) can supply a useful tool.
+      if (!eligible || (matched < Math.min(2, plan.contentCount) && !strongAnchor)) continue;
+      if (explicitProject) score += 300;
+      if (plan.webPerformance && entry.resource.kind === "tool") score += 120;
+      if (entry.name.includes(normalized)) score += broadQuery ? 20 : 45;
       if (entry.description.includes(normalized)) score += 12;
+      if (plan.fileUpload && (entry.tags.has("uploader") || entry.names.has("upload"))) score += 20;
+      if (plan.browserTest) {
+        const browserAutomation = entry.tags.has("browser") && entry.tags.has("automation");
+        if (matched === 1 && !browserAutomation) continue;
+        if (browserAutomation) score += 35;
+        else if (entry.resource.kind === "library" && entry.tags.has("testing") && entry.tags.has("component")) score += 12;
+      }
+      if (plan.interfaceMotion && entry.resource.category === "motion" && entry.resource.kind === "library") score += 18;
+      if ((plan.fileUpload || plan.loginForm) && entry.resource.category === "components") score += 30;
     }
     matches.push({ ...entry.resource, score: Math.round(score * 10) / 10 });
   }
 
   matches.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "en") || a.id.localeCompare(b.id, "en"));
   return {
-    query,
+    ...base,
     total: matches.length,
-    offset,
-    limit,
     resources: matches.slice(offset, offset + limit),
-    indexed: current.resources.length,
-    totalFeatured: current.featured.length,
+    ...(plan.keyless && { filters: { apiKey: "not-required" as const } }),
   };
 }

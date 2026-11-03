@@ -6,16 +6,20 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createAtlas, type Sheet } from "./floor/atlas";
 import { createBounds } from "./floor/bounds";
 import { createDebug } from "./floor/debug";
-import { classifyRelease, type DropBounds } from "./floor/drag";
-import { applyGrowth, applyHoldForces, STEP, SUBSTEPS } from "./floor/forces";
+import { classifyRelease, createFloorDrag, DRAG_THRESHOLD, isClippedResult, pickFloorIcon, type DropBounds } from "./floor/drag";
+import { applyGrowth, applyHoldForces, needsPhysics, park, wakeNear } from "./floor/forces";
+import { advanceClock, createRenderPoses, STEP, SUBSTEP } from "./floor/timing";
+import { createIconBody } from "./floor/icon-body";
 import type { Anchor } from "./floor/layout";
 import { createMatches } from "./floor/matches";
 import { createOverlays, MOST } from "./floor/overlays";
 import { popScale } from "./floor/pop";
-import type { Hold, Match, Scene } from "./floor/scene";
+import { resizeFloorBodies } from "./floor/resize";
+import type { Match, Pop, Scene } from "./floor/scene";
 import { renderSprite } from "./floor/sprite";
 import { createSwaps } from "./floor/swaps";
 import { createTilt, type TiltStatus } from "./floor/tilt";
+import { readMotionPause } from "./useMotionPreference";
 
 export type { Match };
 
@@ -30,12 +34,16 @@ export type FloorApi = {
   add: (src: string) => void;
   /** Pause physical movement while keeping resource selection available. */
   setPaused: (paused: boolean) => void;
+  /** Suspend background work while a blocking panel covers the scene. */
+  setSuspended: (suspended: boolean) => void;
   setTiltEnabled: (enabled: boolean) => void;
   calibrateTilt: () => void;
 };
 
 type Props = {
   sources: string[];
+  featuredCount: number;
+  reserveSources: string[];
   /** Which cell of the packed sheet each pile icon is, or -1 for one that has to be loaded on its own (an upload). */
   cells: number[];
   sheet: Sheet | null;
@@ -67,7 +75,7 @@ const loadImage = (src: string) => {
  * this the floor re-rendered with it: 180 label elements reconciled, and, because their ref was an inline arrow, 180
  * refs detached and re-attached, thirteen times a second. That alone was most of the jank while typing.
  */
-export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef, onReady, onResourceSelect, getDropBounds, onResourceDrop, onTiltStatus }: Props) {
+export const IconFloor = memo(function IconFloor({ sources, featuredCount, reserveSources, cells, sheet, apiRef, onReady, onResourceSelect, getDropBounds, onResourceDrop, onTiltStatus }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const beamRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -79,6 +87,7 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
   // re-take all 180 refs each time.
   const setLabel = useMemo(() => Array.from({ length: MOST }, (_, k) => (el: HTMLDivElement | null) => void (labelRefs.current[k] = el)), []);
   const [iconSize, setIconSize] = useState(96);
+  const [animateBeam, setAnimateBeam] = useState(false);
   const pausedRef = useRef(false);
   const selectRef = useRef(onResourceSelect);
   const dropRef = useRef({ getDropBounds, onResourceDrop });
@@ -98,29 +107,53 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
 
     const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let reduced = reducedQuery.matches;
+    pausedRef.current = readMotionPause();
+    let raf = 0;
+    let stopped = false;
+    let suspended = false;
+    let suspendedAt: number | null = document.hidden ? performance.now() : null;
+    let repaintUntil = 0;
+    let dirty = true;
+    function scheduleFrame() {
+      if (!raf && !stopped && !suspended && !document.hidden) raf = requestAnimationFrame(frame);
+    }
+    function requestPaint() {
+      // Allow tooltip dwell and label fades to complete, then let a paused scene sleep.
+      repaintUntil = performance.now() + 500;
+      scheduleFrame();
+    }
     const engine = Matter.Engine.create({ gravity: { x: 0, y: 1, scale: 0.001 } });
     engine.enableSleeping = true; // bodies that stop moving leave the solver: no jitter, and far less CPU
     // These run in each of the three substeps, so a step gets 12 position passes in all (it was 4): hard hits no longer leave icons overlapping.
     engine.positionIterations = 4;
     engine.velocityIterations = 3;
 
-    // Sleep is decided from speed per 1/60 s. With three substeps the solver's tiny resting corrections read three times
-    // faster (nine times the "motion"), so a settled pile stayed awake for seconds. The thresholds move up to match.
-    const sleeping = Matter.Sleeping as unknown as { _motionSleepThreshold: number; _motionWakeThreshold: number };
+    // Let a settled pile sleep despite tiny corrections at its contacts.
+    const sleeping = Matter.Sleeping as unknown as { _motionSleepThreshold: number };
     sleeping._motionSleepThreshold = 0.35;
-    sleeping._motionWakeThreshold = 0.8;
 
+    // A cold sprite sheet can take longer than the entire pour. Start only once art can actually be painted.
+    let dropAt = Infinity;
+    let suspendedDropAt = Infinity;
+    let suspendedPops = new Set<Pop>();
     const srcs = [...sources];
     const scene: Scene = {
       engine, srcs, images: srcs.map(() => null), tiles: srcs.map((_, i) => (sheet && cells[i] >= 0 ? cells[i] : null)),
       atlas: createAtlas(), sheet, sheetImg: null, bodies: [],
       grown: new Map(), sharp: new Map(), holds: new Map(), pops: new Map(), box: null, scroll: 0,
-      width: 0, height: 0, size: 96, bigSize: 96, midSize: 56, dpr: 1, added: 0, dirty: true, now: performance.now(), animate: !reduced && !pausedRef.current,
+      width: 0, height: 0, size: 96, bigSize: 96, midSize: 56, dpr: 1, added: 0, now: performance.now(), animate: !reduced && !pausedRef.current,
+      get dirty() { return dirty; },
+      set dirty(value) {
+        dirty = value;
+        if (value) requestPaint();
+      },
       retile(i) {
         const tile = scene.tiles[i];
         if (typeof tile === "number") {
+          if (!scene.sheet) return loadOwn(i); // A borrowed cell can return after the packed image failed.
           if (scene.sheetImg?.complete && scene.sheetImg.naturalWidth) scene.atlas.putSheet(i, sheet!, scene.sheetImg, tile);
         } else if (!scene.atlas.putImage(i, tile)) return; // its own picture has not arrived yet; it will call back
+        if (dropAt === Infinity && scene.atlas.patch(i)) dropAt = performance.now() + 200;
         if (scene.grown.has(i)) scene.sharp.set(i, renderSprite(scene.images[i], scene.bigSize, scene.dpr)); // keep the enlarged copy crisp after a resize
         scene.dirty = true;
       },
@@ -133,6 +166,9 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       },
     };
     const { images, bodies, holds, grown, sharp, pops } = scene;
+    let press: { pointerId: number; start: Matter.Vector; time: number; local: Matter.Vector; travelled: number; src: string; index: number } | null = null;
+    let canceledPointerId: number | null = null;
+    let suppressedClick: { x: number; y: number; until: number } | null = null;
     const tilt = createTilt(scene, status => tiltStatusRef.current?.(status));
     tilt.setSuspended(!scene.animate || document.hidden);
 
@@ -166,12 +202,17 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       if (scene.tiles[i] === null) loadOwn(i);
     });
 
-    const mouse = Matter.Mouse.create(canvas);
-    const bounds = createBounds(scene, canvas, mouse);
+    const bounds = createBounds(scene);
     const resize = () => {
-      const dpr = (scene.dpr = Math.min(window.devicePixelRatio || 1, 2));
-      const width = (scene.width = canvas.clientWidth);
-      const height = (scene.height = canvas.clientHeight);
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      if (!width || !height || (width === scene.width && height === scene.height && dpr === scene.dpr)) return false;
+      if (scene.width > 0) invalidateGesture();
+      const previous = { width: scene.width, height: scene.height, size: scene.size };
+      scene.width = width;
+      scene.height = height;
+      scene.dpr = dpr;
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -181,28 +222,22 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       scene.bigSize = Math.max(64, Math.min(104, width / 12));
       scene.midSize = Math.max(40, Math.min(60, width / 22));
       setIconSize(scene.bigSize);
+      resizeFloorBodies(scene, previous);
       bounds.build();
       rebake();
+      return true;
     };
     resize();
 
-    // Plain 4-corner boxes: the rounded corners are only painted. A chamfered body has ~16 corners, and collision
-    // checks cost per corner, which is what made a pile of hundreds lag.
-    const spawn = (i: number) =>
-      Matter.Bodies.rectangle(scene.width * (0.1 + 0.8 * ((i * 0.618) % 1)), -scene.size * (1.4 + (i % 12) * 1.3), scene.size, scene.size, {
-        restitution: 0.45,
-        friction: 0.6,
-        frictionStatic: 1.2,
-        frictionAir: 0.014,
-        angle: (Math.random() - 0.5) * 0.6,
-        sleepThreshold: 30, // in 1/60 s steps (matter scales it to the substep): half a second of stillness, enough for an overlap to be pushed apart first
-      });
+    const spawn = (i: number) => createIconBody(
+      scene.width * (0.1 + 0.8 * ((i * 0.618) % 1)),
+      -scene.size * (1.4 + (i % 12) * 1.3),
+      scene.size,
+      (Math.random() - 0.5) * 0.6,
+    );
     images.forEach((_, i) => bodies.push(spawn(i)));
 
-    const drag = Matter.MouseConstraint.create(engine, { mouse, constraint: { stiffness: 0.14, render: { visible: false } } });
-    Matter.Composite.add(engine.world, drag);
-    const wheel = (mouse as unknown as { mousewheel: EventListener }).mousewheel;
-    canvas.removeEventListener("wheel", wheel); // the physics mouse otherwise swallows the wheel
+    const drag = createFloorDrag(engine);
 
     /**
      * What the frames actually cost, measured where they happen. "Smooth" is not an average: a run at 120 fps with one
@@ -223,21 +258,28 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
         late: pace.filter((d) => d > mid * 1.6).length, // frames that missed their slot by enough to be seen
       };
     };
-    const stats = { stepMs: 0, drawMs: 0, awake: 0, swaps: 0, gx: 0, gy: 1, paced }; // read from the console as window.__floor when chasing lag
+    const stats = { solverSteps: 0, stepMs: 0, drawMs: 0, awake: 0, swaps: 0, gx: 0, gy: 1, paced }; // read from the console as window.__floor when chasing lag
     (window as unknown as { __floor?: unknown }).__floor = Object.assign(stats, createDebug(scene));
     const overlays = createOverlays(scene, { labels: () => labelRefs.current, tip: () => tipRef.current, frame: () => frameRef.current, clip: () => clipRef.current, content: () => contentRef.current, beam: () => beamRef.current });
-    const swaps = createSwaps(scene, (i) => drag.body === bodies[i], stats);
-    const matches = createMatches(scene, overlays, swaps, loadImage);
+    const swaps = createSwaps(scene, (i) => i === press?.index, invalidateGesture, stats, featuredCount, reserveSources);
+    const matches = createMatches(scene, overlays, swaps, loadImage, invalidateGesture, featuredCount);
     Object.assign(stats, { holes: () => matches.holes() });
 
-    const SUB = STEP / SUBSTEPS; // one substep of simulated time, the unit the world actually advances by
-    const CATCH_UP = 4; // most substeps in one frame, so a stall cannot cascade into a long freeze
-    let raf = 0;
+    const poses = createRenderPoses(bodies);
+    let blend = 1;
+    let canInterpolate = false;
+    const drawnPose = (i: number) => poses.at(i, blend);
     let frames = 0;
     let last = performance.now();
     let acc = 0;
-    let dropAt = performance.now() + 200;
+    const resetClock = () => {
+      last = performance.now();
+      acc = 0;
+      canInterpolate = false;
+      blend = 1;
+    };
     let lastShake = 0;
+    let wasAwake = false;
 
     const placeRemaining = () => {
       const columns = Math.max(1, Math.floor((scene.width - scene.size) / scene.size));
@@ -255,11 +297,28 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       scene.dirty = true;
     };
     if (!scene.animate) placeRemaining();
+    setAnimateBeam(scene.animate);
+
+    const syncMotion = () => {
+      const animate = !pausedRef.current && !reduced;
+      if (animate === scene.animate) return;
+      invalidateGesture();
+      scene.animate = animate;
+      setAnimateBeam(animate && !suspended && !document.hidden);
+      tilt.setSuspended(!animate || suspended || document.hidden);
+      if (!animate) {
+        swaps.finish();
+        placeRemaining();
+        matches.relayout();
+      }
+      resetClock();
+      requestPaint();
+    };
 
     const paint = (i: number, scale: number) => {
       const sprite = (scale > 1 ? sharp.get(i) : null) ?? scene.atlas.patch(i);
       if (!sprite) return;
-      const body = bodies[i];
+      const body = drawnPose(i);
       const pop = pops.get(i);
       const side = scene.size * scale * (pop ? popScale(scene.now - pop.t0) : 1);
       if (side < 0.5) return;
@@ -278,16 +337,7 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       // settled belong to the container: they are clipped to it, which is what lets it scroll.
       const settled: number[] = [];
       grown.forEach((scale, i) => {
-        const hold = holds.get(i);
-        const { x, y } = bodies[i].position;
-        const reach = scene.size * scale; // a row that only peeks into the container has its centre just outside it
-        const close = !!box && x > box.x && x < box.x + box.width && y > box.y - reach && y < box.y + box.height + reach;
-        // An icon belongs to the container once it is at its cell, not merely once it counts as arrived. "Arrived" is
-        // also set after three seconds however far away it still is, and clipping one to the container while it was
-        // still climbing past the search bar cut it in half and then swallowed it, which read as icons vanishing
-        // underneath the bar. Anything still travelling is drawn free, on top of everything, all the way home.
-        const home = !!hold && Math.abs(y - (hold.rest.y - scene.scroll)) < reach && Math.abs(x - hold.rest.x) < reach;
-        if (box && hold && (hold.parked || (hold.arrived && close && home))) settled.push(i);
+        if (drag.body !== bodies[i] && isClippedResult(scene, i)) settled.push(i);
         else paint(i, scale);
       });
       if (box && settled.length) {
@@ -332,9 +382,35 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    const frame = (now: number) => {
-      raf = requestAnimationFrame(frame);
-      if (document.hidden) {
+    const stepPhysics = (elapsed: number) => {
+      if (!needsPhysics(scene, drag.body)) {
+        acc = 0;
+        canInterpolate = false;
+        blend = 1;
+        return;
+      }
+      const tick = advanceClock(acc, elapsed);
+      acc = tick.remainder;
+      if (tick.steps) canInterpolate = true;
+      blend = canInterpolate ? acc / SUBSTEP : 1;
+      if (!tick.steps) return;
+      const t0 = performance.now();
+      for (let step = 0; step < tick.steps; step++) {
+        applyGrowth(scene, SUBSTEP / STEP, drag.body);
+        applyHoldForces(scene, SUBSTEP, drag.body);
+        bounds.limitSpeeds(SUBSTEP);
+        if (step === tick.steps - 1) poses.beforeStep(scene.added);
+        Matter.Engine.update(engine, SUBSTEP);
+      }
+      poses.afterStep(scene.added);
+      stats.solverSteps += tick.steps;
+      stats.stepMs += ((performance.now() - t0) / tick.steps - stats.stepMs) * 0.1;
+    };
+
+    function frame(now: number) {
+      raf = 0;
+      if (document.hidden || suspended) {
+        canInterpolate = false;
         last = now;
         acc = 0;
         return;
@@ -344,7 +420,6 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
         pace.push(raw); // a gap over half a second is the tab being parked, not a dropped frame
         if (pace.length > PACE) pace.shift();
       }
-      const elapsed = Math.min(now - last, 120);
       last = now;
       scene.now = now;
       if (scene.animate) {
@@ -358,30 +433,13 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
           poured++;
           scene.dirty = true;
         }
-        // The substeps are spread across frames rather than fired in bursts. A 1/60 s step is three 1/180 s substeps,
-        // so on a 120 Hz screen the old loop ran three of them on one frame and none on the next: half the frames did
-        // all the work and the pacing alternated visibly, about 6 ms then 10.5 ms, even though the work itself is
-        // under a millisecond. Draining one substep at a time gives 1, 1, 2, 1, 1, 2 instead of 3, 0, 3, 0. The
-        // simulation sees exactly the same fixed 1/180 s steps it always did; only when they arrive has changed.
-        acc += elapsed;
-        let ran = 0;
-        const t0 = performance.now();
-        while (acc >= SUB && ran < CATCH_UP) {
-          applyGrowth(scene, SUB / STEP);
-          applyHoldForces(scene, SUB);
-          bounds.limitSpeeds(SUB);
-          Matter.Engine.update(engine, SUB);
-          acc -= SUB;
-          ran++;
-        }
-        if (ran) stats.stepMs += ((performance.now() - t0) / ran - stats.stepMs) * 0.1; // now per substep
-        if (acc > SUB * CATCH_UP) acc = 0; // never try to catch up after a stall: slow motion beats a freeze
-      }
-      if (scene.animate) {
+        stepPhysics(raw);
         swaps.run(now);
         bounds.patrol(++frames);
       } else {
         frames++;
+        blend = 1;
+        canInterpolate = false;
         acc = 0;
         if (scene.added < bodies.length) placeRemaining();
       }
@@ -391,16 +449,51 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       stats.awake = awake;
       stats.gx = engine.gravity.x;
       stats.gy = engine.gravity.y;
-      if (awake && scene.animate) scene.dirty = true;
-      overlays.place(now);
+      if ((awake || wasAwake) && scene.animate) scene.dirty = true;
+      wasAwake = awake > 0;
+      overlays.place(now, drawnPose);
       if (scene.dirty) {
         const t0 = performance.now();
         draw();
         stats.drawMs += (performance.now() - t0 - stats.drawMs) * 0.1;
         scene.dirty = false;
-      } else if (pops.size) drawSwaps();
-    };
-    raf = requestAnimationFrame(frame);
+      } else if (pops.size) {
+        // The small pile-only repaint cannot reproduce the ordered, clipped layers of search results.
+        if (grown.size) draw();
+        else drawSwaps();
+      }
+      if (scene.animate || now < repaintUntil) scheduleFrame();
+    }
+    requestPaint();
+
+    function syncSuspension() {
+      const sleeping = suspended || document.hidden;
+      tilt.setSuspended(!scene.animate || sleeping);
+      setAnimateBeam(scene.animate && !sleeping);
+      if (sleeping) {
+        if (suspendedAt === null) {
+          suspendedAt = performance.now();
+          suspendedDropAt = dropAt;
+          suspendedPops = new Set(pops.values());
+        }
+        invalidateGesture();
+        cancelAnimationFrame(raf);
+        raf = 0;
+        return;
+      }
+      if (suspendedAt !== null) {
+        const now = performance.now();
+        const elapsed = now - suspendedAt;
+        if (Number.isFinite(dropAt)) dropAt = Number.isFinite(suspendedDropAt) ? dropAt + elapsed : now + 200;
+        // Artwork can finish loading under a panel. New swaps start on return;
+        // existing swaps keep the exact progress and delay they had on suspension.
+        for (const pop of pops.values()) pop.t0 = suspendedPops.has(pop) ? pop.t0 + elapsed : now;
+        suspendedPops.clear();
+        suspendedAt = null;
+      }
+      resetClock();
+      requestPaint();
+    }
 
     apiRef.current = {
       shake(intensity) {
@@ -420,8 +513,8 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
         }
         scene.dirty = true;
       },
-      select: (found, getAnchor) => matches.select(found, getAnchor),
-      release: () => matches.release(),
+      select(found, getAnchor) { matches.select(found, getAnchor); requestPaint(); },
+      release() { matches.release(); requestPaint(); },
       add(src) {
         if (srcs.includes(src)) return;
         const i = srcs.push(src) - 1;
@@ -435,15 +528,12 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       },
       setPaused(paused) {
         pausedRef.current = paused;
-        scene.animate = !paused && !reduced;
-        tilt.setSuspended(!scene.animate || document.hidden);
-        if (!scene.animate) {
-          swaps.finish();
-          placeRemaining();
-          matches.relayout();
-        }
-        last = performance.now();
-        acc = 0;
+        syncMotion();
+      },
+      setSuspended(value) {
+        if (value === suspended) return;
+        suspended = value;
+        syncSuspension();
       },
       setTiltEnabled: enabled => tilt.setEnabled(enabled),
       calibrateTilt: () => tilt.calibrate(),
@@ -452,76 +542,84 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
 
     const onReducedMotion = (event: MediaQueryListEvent) => {
       reduced = event.matches;
-      scene.animate = !reduced && !pausedRef.current;
-      tilt.setSuspended(!scene.animate || document.hidden);
-      if (!scene.animate) {
-        swaps.finish();
-        placeRemaining();
-        matches.relayout();
-      }
-      last = performance.now();
-      acc = 0;
+      syncMotion();
     };
     reducedQuery.addEventListener("change", onReducedMotion);
 
     // Pointer travel distinguishes an intentional click from throwing a body.
-    let press: { pointerId: number; x: number; y: number; travelled: number; src: string; index: number; hold?: Hold; lifted: boolean } | null = null;
-    let suppressedClick: { x: number; y: number; until: number } | null = null;
-    const restoreHold = () => {
-      if (!press?.lifted || !press.hold) return;
-      const { hold, index } = press;
-      holds.set(index, hold);
-      hold.parked = !scene.animate;
-      if (!scene.animate) {
-        Matter.Body.setPosition(bodies[index], { x: hold.rest.x, y: hold.rest.y - scene.scroll });
-        Matter.Body.setVelocity(bodies[index], { x: 0, y: 0 });
-      }
-      scene.dirty = true;
+    const worldPoint = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !event.isPrimary) return;
-      suppressedClick = null;
-      const rect = canvas.getBoundingClientRect();
-      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      const hits = Matter.Query.point(bodies.slice(0, scene.added), point);
-      const visible = hits.filter((body) => {
-        const hold = holds.get(bodies.indexOf(body));
-        const box = scene.box;
-        return !hold?.parked || !box || (point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height);
-      });
-      const hit = visible.findLast((body) => grown.has(bodies.indexOf(body))) ?? visible.at(-1);
+      if (press || event.button !== 0 || !event.isPrimary) return;
+      const point = worldPoint(event);
+      const hit = pickFloorIcon(scene, point, drawnPose);
       if (!hit) return;
-      const index = bodies.indexOf(hit);
-      press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, travelled: 0, src: srcs[index], index, hold: holds.get(index), lifted: false };
+      press = { ...hit, pointerId: event.pointerId, start: point, time: event.timeStamp, travelled: 0, src: srcs[hit.index] };
       canvas.setPointerCapture(event.pointerId);
     };
     const onPointerMove = (event: PointerEvent) => {
+      if (scene.box && !scene.animate) requestPaint();
       if (!press || press.pointerId !== event.pointerId) return;
-      press.travelled = Math.max(press.travelled, Math.hypot(event.clientX - press.x, event.clientY - press.y));
-      if (press.travelled > 7 && press.hold) {
-        // Parked results ignore Matter's mouse constraint. Lift them out of their spring while dragging.
-        press.lifted = true;
-        holds.delete(press.index);
-        const rect = canvas.getBoundingClientRect();
-        Matter.Body.setPosition(bodies[press.index], { x: event.clientX - rect.left, y: event.clientY - rect.top });
-        Matter.Body.setVelocity(bodies[press.index], { x: 0, y: 0 });
+      const point = worldPoint(event);
+      press.travelled = Math.max(press.travelled, Math.hypot(point.x - press.start.x, point.y - press.start.y));
+      if (press.travelled <= DRAG_THRESHOLD) return;
+      if (!drag.body) {
+        const body = bodies[press.index];
+        const hold = holds.get(press.index);
+        if (hold) hold.parked = false;
+        if (scene.animate) wakeNear(scene, body);
+        drag.start(body, press.local, press.start, press.time, scene.size * (grown.get(press.index) ?? 1));
+      }
+      drag.move({
+        x: Math.max(0, Math.min(scene.width, point.x)),
+        y: Math.max(0, Math.min(scene.height, point.y)),
+      }, event.timeStamp, scene.animate);
+      scene.dirty = true;
+    };
+    function finishGesture(fling: boolean, releaseCapture = true) {
+      if (!press) return;
+      const { index, pointerId } = press;
+      press = null;
+      if (drag.body) {
+        const hold = holds.get(index);
+        drag.finish(fling && scene.animate && !hold);
+        if (hold) {
+          hold.t = 0;
+          hold.boost = 1;
+          if (!scene.animate) park(scene, index);
+        }
         scene.dirty = true;
       }
-    };
+      if (releaseCapture && canvas?.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+    }
+    function invalidateGesture(index?: number) {
+      if (!press || (index !== undefined && press.index !== index)) return;
+      canceledPointerId = press.pointerId;
+      // Keep capture through pointerup so a button beneath a canceled drag cannot receive the release.
+      finishGesture(false, false);
+    }
+    function suppressClick(event: PointerEvent) {
+      suppressedClick = { x: event.clientX, y: event.clientY, until: performance.now() + 500 };
+      event.preventDefault();
+    }
     const onPointerUp = (event: PointerEvent) => {
+      if (canceledPointerId === event.pointerId) {
+        canceledPointerId = null;
+        suppressClick(event);
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+        return;
+      }
       if (!press || press.pointerId !== event.pointerId) return;
       onPointerMove(event);
       const selected = press;
-      restoreHold();
-      press = null;
-      mouse.button = -1;
-      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
       const dropBounds = dropRef.current.getDropBounds?.() ?? null;
       const action = classifyRelease(selected.travelled, event.clientX, event.clientY, dropBounds);
+      finishGesture(action === "ignore");
       if (action === "select") selectRef.current?.(selected.src);
       else {
-        suppressedClick = { x: event.clientX, y: event.clientY, until: performance.now() + 500 };
-        event.preventDefault();
+        suppressClick(event);
         if (action === "drop") dropRef.current.onResourceDrop?.(selected.src);
       }
     };
@@ -532,74 +630,66 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
       event.stopImmediatePropagation();
     };
     const onPointerCancel = (event: PointerEvent) => {
-      if (press?.pointerId !== event.pointerId) return;
-      restoreHold();
-      press = null;
-      mouse.button = -1;
-      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      if (press?.pointerId === event.pointerId) invalidateGesture();
     };
+    const clearOldClick = (event: PointerEvent) => {
+      if (!event.isPrimary || event.button !== 0) return;
+      suppressedClick = null;
+      if (canceledPointerId === event.pointerId) canceledPointerId = null;
+    };
+    const onBlur = () => invalidateGesture();
     const onVisibilityChange = () => {
-      tilt.setSuspended(!scene.animate || document.hidden);
-      last = performance.now();
-      acc = 0;
-      restoreHold();
-      press = null;
-      mouse.button = -1;
+      syncSuspension();
     };
     document.addEventListener("click", onClick, true);
+    window.addEventListener("pointerdown", clearOldClick, true);
     canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("lostpointercapture", onPointerCancel);
+    window.addEventListener("blur", onBlur);
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerCancel);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     const onResize = () => {
-      resize();
-      matches.relayout();
-      for (let i = 0; i < scene.added; i++) {
-        const body = bodies[i];
-        if (holds.has(i)) continue;
-        if (body.position.y > scene.height + scene.size * 3 || body.position.x < -scene.size || body.position.x > scene.width + scene.size) {
-          Matter.Body.setPosition(body, { x: scene.width / 2, y: -scene.size * 1.5 });
-          Matter.Body.setVelocity(body, { x: 0, y: 0 });
-          Matter.Sleeping.set(body, false);
-        }
-      }
+      if (resize()) matches.relayout();
     };
     window.addEventListener("resize", onResize);
     // The wheel scrolls the container when the cursor is over it and there is more than fits.
     const onWheel = (e: WheelEvent) => {
-      if (matches.scrollBy(e.deltaY, e.clientX, e.clientY)) e.preventDefault();
+      if (matches.scrollBy(e.deltaY, e.clientX, e.clientY)) {
+        e.preventDefault();
+        requestPaint();
+      }
     };
     window.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
+      stopped = true;
       tilt.stop();
+      finishGesture(false);
+      if (canceledPointerId !== null && canvas.hasPointerCapture(canceledPointerId)) canvas.releasePointerCapture(canceledPointerId);
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("lostpointercapture", onPointerCancel);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       document.removeEventListener("click", onClick, true);
+      window.removeEventListener("pointerdown", clearOldClick, true);
       reducedQuery.removeEventListener("change", onReducedMotion);
       overlays.destroy();
-      bounds.destroy();
       swaps.stop();
-      const handlers = mouse as unknown as Record<string, EventListener>;
-      for (const [event, handler] of [
-        ["mousemove", "mousemove"], ["mousedown", "mousedown"], ["mouseup", "mouseup"],
-        ["wheel", "mousewheel"], ["touchmove", "mousemove"], ["touchstart", "mousedown"], ["touchend", "mouseup"],
-      ]) canvas.removeEventListener(event, handlers[handler]);
-      Matter.Mouse.clearSourceEvents(mouse);
       Matter.Events.off(engine, "beforeUpdate afterUpdate collisionStart collisionActive collisionEnd");
       apiRef.current = null;
       Matter.Composite.clear(engine.world, false);
       Matter.Engine.clear(engine);
     };
-  }, [sources, cells, sheet, apiRef, onReady]);
+  }, [sources, featuredCount, reserveSources, cells, sheet, apiRef, onReady]);
 
   return (
     <>
@@ -612,11 +702,12 @@ export const IconFloor = memo(function IconFloor({ sources, cells, sheet, apiRef
         ref={beamRef}
         aria-hidden
         className="pointer-events-none fixed left-0 top-0 will-change-transform"
-        style={{ width: iconSize, height: iconSize, opacity: 0, transition: "opacity 300ms ease-out" }}
+        style={{ width: iconSize, height: iconSize, opacity: 0, borderRadius: iconSize * 0.225,
+          transition: animateBeam ? "opacity 300ms ease-out" : "none", boxShadow: animateBeam ? undefined : "inset 0 0 0 1.5px #bcb9cc" }}
       >
-        <BorderBeam size="md" colorVariant="colorful" theme="dark" strength={1} brightness={1.9} saturation={1.5} borderRadius={iconSize * 0.225}>
+        {animateBeam && <BorderBeam size="md" colorVariant="colorful" theme="dark" strength={1} brightness={1.9} saturation={1.5} borderRadius={iconSize * 0.225}>
           <div style={{ width: iconSize, height: iconSize, borderRadius: iconSize * 0.225 }} />
-        </BorderBeam>
+        </BorderBeam>}
       </div>
       {/* The container again, in front of the canvas this time: it clips the labels and carries the soft edges that
           show there is more to scroll to. One probability label per match, each placed once in its cell. */}

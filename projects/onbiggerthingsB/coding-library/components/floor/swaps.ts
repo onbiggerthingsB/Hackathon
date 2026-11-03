@@ -1,15 +1,15 @@
 import Matter from "matter-js";
-import { wakeAt } from "./forces";
-import { POP_IN, POP_OUT } from "./pop";
-import { createReserve } from "./reserve";
+import { wakeAt } from "./forces.ts";
+import { POP_IN, POP_OUT } from "./pop.ts";
+import { createReserve } from "./reserve.ts";
 import type { Scene } from "./scene";
 
 const CHURN = 900; // ms between swaps: the pile is a moving window onto a library far larger than it can hold. Slower than
 // when a swap happened in place, because now each one is a visible little event: one icon goes, another falls in.
 
 /** Images popping in and out of the pile: the steady churn, and a search match that was not in the pile yet. */
-export function createSwaps(scene: Scene, isDragged: (i: number) => boolean, stats: { swaps: number }) {
-  const reserve = createReserve((src) => scene.srcs.includes(src));
+export function createSwaps(scene: Scene, isDragged: (i: number) => boolean, invalidateGesture: (i: number) => void, stats: { swaps: number }, featuredCount = 0, overflow: string[] = []) {
+  const reserve = createReserve([...scene.srcs.slice(featuredCount), ...overflow]);
   let churnAt = performance.now() + 6000; // the pile pours first
 
   return {
@@ -19,6 +19,7 @@ export function createSwaps(scene: Scene, isDragged: (i: number) => boolean, sta
      */
     swapIn(slot: number, img: HTMLImageElement, src: string, delay = 0, then?: () => void, rain = false) {
       if (!scene.animate) {
+        invalidateGesture(slot);
         scene.srcs[slot] = src;
         scene.images[slot] = img;
         scene.tiles[slot] = img;
@@ -26,16 +27,20 @@ export function createSwaps(scene: Scene, isDragged: (i: number) => boolean, sta
         then?.();
         return;
       }
-      scene.pops.set(slot, { t0: performance.now() + delay, img, src, swapped: false, rain, then });
+      const pop = { t0: performance.now() + delay, img, src, swapped: false, rain, then };
+      scene.pops.set(slot, pop);
+      return pop;
     },
 
-    /** Every third of a second one image in the pile pops away and another from the library takes its place. */
+    /** Rotate community tiles between searches. Featured slots stay in the pile. */
     churn(now: number) {
-      if (now < churnAt || scene.added < scene.bodies.length) return;
+      if (now < churnAt || scene.box || scene.added < scene.bodies.length || scene.added <= featuredCount) return;
       churnAt = now + CHURN * (0.6 + Math.random() * 0.8);
-      const i = Math.floor(Math.random() * scene.added);
+      const i = featuredCount + Math.floor(Math.random() * (scene.added - featuredCount));
       if (scene.holds.has(i) || scene.grown.has(i) || scene.pops.has(i) || isDragged(i)) return;
-      const img = reserve.next();
+      const occupied = new Set(scene.srcs);
+      for (const pending of scene.pops.values()) occupied.add(pending.src);
+      const img = reserve.next(occupied);
       if (img) this.swapIn(i, img, img.getAttribute("src")!, 0, undefined, true);
     },
 
@@ -44,6 +49,7 @@ export function createSwaps(scene: Scene, isDragged: (i: number) => boolean, sta
       scene.pops.forEach((pop, i) => {
         const elapsed = now - pop.t0;
         if (!pop.swapped && elapsed >= POP_OUT) {
+          invalidateGesture(i);
           pop.swapped = true;
           stats.swaps++;
           scene.srcs[i] = pop.src;
@@ -79,6 +85,7 @@ export function createSwaps(scene: Scene, isDragged: (i: number) => boolean, sta
     finish() {
       scene.pops.forEach((pop, i) => {
         if (!pop.swapped) {
+          invalidateGesture(i);
           scene.srcs[i] = pop.src;
           scene.images[i] = pop.img;
           scene.tiles[i] = pop.img;
